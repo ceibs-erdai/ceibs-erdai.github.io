@@ -140,6 +140,7 @@ input[type="datetime-local"].in { min-width: 0; -webkit-appearance: none; }
 .field { display: grid; gap: 6px; min-width: 0; }
 .field > label, .label { font-weight: 600; font-size: 14px; }
 .opt-tag { font-weight: 400; font-size: 12px; color: var(--faint); margin-left: 4px; }
+.req { margin-left: 3px; color: var(--seal-text); font-weight: 800; }
 .hint { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
 .hint.block { display: block; margin-top: 2px; font-weight: 400; }
 .check { display: flex; gap: 10px; align-items: flex-start; font-size: 14.5px; cursor: pointer; font-weight: 600; }
@@ -929,6 +930,8 @@ class Boundary extends Component {
   }
 }
 const MiniSeal = ({ c }) => html`<span class=${"mseal cat-" + c.key} aria-hidden="true">${c.glyph}</span>`;
+// 必填标记；对应的输入框同时加 required，读屏软件会念出「必填」
+const Req = () => html`<span class="req" aria-hidden="true">*</span>`;
 function CatChips({ cats }) {
   return (cats || []).map((k) => { const c = catOf(k); return html`<span key=${k} class=${"cchip cat-" + c.key}><${MiniSeal} c=${c} />${c.label}</span>`; });
 }
@@ -1211,8 +1214,8 @@ function JoinForm({ e, onJoined }) {
     : `带朋友一起来就加人数（最多 ${e.max_party} 人）。`;
   return html`<form class="card stack" onSubmit=${submit} novalidate>
     <h2 class="h-sec">${over && e.waitlist ? "名额满了，可以排候补" : "报名"}</h2>
-    <div class="field"><label for="j-name">你的名字</label>
-      <input id="j-name" class="in" value=${name} onInput=${(x) => setName(x.target.value)} maxlength="40" autocomplete="name" placeholder="中文名、英文名都行" /></div>
+    <div class="field"><label for="j-name">你的名字<${Req} /></label>
+      <input id="j-name" class="in" required value=${name} onInput=${(x) => setName(x.target.value)} maxlength="40" autocomplete="name" placeholder="中文名、英文名都行" /></div>
     <div class="field"><span class="label" id="j-party-l">一共几个人（含你自己）</span>
       <${Counter} id="j-party" value=${party} min=${1} max=${e.max_party} onChange=${setParty} labelledby="j-party-l" />
       <p class="hint">${partyHint}</p></div>
@@ -1380,17 +1383,18 @@ function EventForm({ mode, initial, settings, onDone }) {
   }
   const big = team && settings && f.sponsor_plan !== "" && +f.sponsor_plan >= +settings.big_amount;
   return html`<form class="stack" onSubmit=${submit} novalidate>
-    <div class="field"><label for="f-title">活动名称</label>
-      <input id="f-title" class="in" maxlength="80" value=${f.title} onInput=${set("title")} placeholder="比如：High Park 秋叶徒步" /></div>
-    <div class="field"><span class="label">类型 <span class="opt-tag">选 1–2 个</span></span>
+    <p class="hint"><span class="req" style="margin:0 2px 0 0">*</span>为必填，其余可以留空。</p>
+    <div class="field"><label for="f-title">活动名称<${Req} /></label>
+      <input id="f-title" class="in" required maxlength="80" value=${f.title} onInput=${set("title")} placeholder="比如：High Park 秋叶徒步" /></div>
+    <div class="field"><span class="label">类型<${Req} /> <span class="opt-tag">选 1–2 个</span></span>
       <div class="chips wrap">${CATS.map((c) => html`<button type="button" key=${c.key} class=${"fchip cat-" + c.key + (f.categories.includes(c.key) ? " on" : "")} aria-pressed=${f.categories.includes(c.key)} onClick=${() => toggleCat(c.key)}><${MiniSeal} c=${c} />${c.label}</button>`)}</div></div>
     <div class="grid2">
-      <div class="field"><label for="f-start">开始</label><input id="f-start" class="in" type="datetime-local" value=${f.start} onInput=${set("start")} /></div>
+      <div class="field"><label for="f-start">开始<${Req} /></label><input id="f-start" class="in" type="datetime-local" required value=${f.start} onInput=${set("start")} /></div>
       <div class="field"><label for="f-end">结束 <span class="opt-tag">选填</span></label><input id="f-end" class="in" type="datetime-local" value=${f.end} onInput=${set("end")} /></div>
     </div>
     <p class="hint" style="margin-top:-8px">按${CONFIG.city}当地时间填。</p>
-    <div class="field"><label for="f-loc">地点</label>
-      <input id="f-loc" class="in" maxlength="200" value=${f.location} onInput=${set("location")} placeholder="店名、地址，或「具体见群公告」" /></div>
+    <div class="field"><label for="f-loc">地点<${Req} /></label>
+      <input id="f-loc" class="in" required maxlength="200" value=${f.location} onInput=${set("location")} placeholder="店名、地址，或「具体见群公告」" /></div>
     <div class="field"><label for="f-map">地图链接 <span class="opt-tag">选填</span></label>
       <input id="f-map" class="in" type="url" maxlength="500" value=${f.map_url} onInput=${set("map_url")} placeholder="Google 地图的分享链接" />
       <p class="hint">不填的话，「地图」按钮会按地点搜索。</p></div>
@@ -1409,7 +1413,7 @@ function EventForm({ mode, initial, settings, onDone }) {
       <textarea id="f-desc" class="in" rows="7" maxlength="5000" value=${f.description} onInput=${set("description")} placeholder="做什么、要带什么、几点到……"></textarea>
       <p class="hint">*两边加星号* 会加粗，「- 」开头的行会变成列表，链接自动可点。${f.description.length} / 5000</p></div>
     <div class="grid2">
-      <div class="field"><label for="f-host">组织者</label><input id="f-host" class="in" maxlength="60" value=${f.host_name} onInput=${set("host_name")} /></div>
+      <div class="field"><label for="f-host">组织者<${Req} /></label><input id="f-host" class="in" required maxlength="60" value=${f.host_name} onInput=${set("host_name")} /></div>
       <div class="field"><label for="f-contact">联系方式 <span class="opt-tag">会公开</span></label><input id="f-contact" class="in" maxlength="120" value=${f.host_contact} onInput=${set("host_contact")} placeholder="微信号，或「群里 @我」" /></div>
     </div>
     ${mode === "propose" && html`<div class="field"><label for="f-pnote">给核心团队的话 <span class="opt-tag">不公开</span></label>
@@ -1661,10 +1665,10 @@ function AddGuest({ e, onAdded }) {
     setName(""); setParty(1); setWechat(""); setIsNew(false); setBusy(false);
     onAdded();
   }
-  return html`<form class="card stack-sm" onSubmit=${submit}>
+  return html`<form class="card stack-sm" onSubmit=${submit} novalidate>
     <h3 class="h-sec">帮人报名</h3>
     <div class="grid2">
-      <div class="field"><label for="g-name">名字</label><input id="g-name" class="in" maxlength="40" value=${name} onInput=${(x) => setName(x.target.value)} /></div>
+      <div class="field"><label for="g-name">名字<${Req} /></label><input id="g-name" class="in" required maxlength="40" value=${name} onInput=${(x) => setName(x.target.value)} /></div>
       <div class="field"><label for="g-wx">微信 <span class="opt-tag">选填</span></label><input id="g-wx" class="in" maxlength="60" value=${wechat} onInput=${(x) => setWechat(x.target.value)} /></div>
     </div>
     <div class="field"><span class="label" id="g-party-l">人数</span><${Counter} id="g-party" value=${party} min=${1} max=${10} onChange=${setParty} labelledby="g-party-l" /></div>
@@ -1734,11 +1738,11 @@ function WrapUp({ e, st, onSaved }) {
     UI.toast("结算已保存，年度回顾里能看到了");
     setBusy(false); onSaved();
   }
-  return html`<form class="card stack" onSubmit=${save}>
+  return html`<form class="card stack" onSubmit=${save} novalidate>
     <div class="stack-xs"><h2 class="h-sec">活动结算${e.wrapped ? html` <span class="pill ok">已结算</span>` : null}</h2>
       <p class="small muted">理事会要的就三样：实到人数、收据、年底回顾。这里填好，年度回顾会自动汇总。</p></div>
     <div class="grid2">
-      <div class="field"><label for="w-count">实到人数</label><input id="w-count" class="in" type="number" inputmode="numeric" min="0" value=${count} onInput=${(x) => setCount(x.target.value)} />
+      <div class="field"><label for="w-count">实到人数<${Req} /></label><input id="w-count" class="in" type="number" required inputmode="numeric" min="0" value=${count} onInput=${(x) => setCount(x.target.value)} />
         <p class="hint">报名 ${st.going} 人，已签到 ${st.attended} 人</p></div>
       <div class="field"><label for="w-cost">总花费（加元）</label><input id="w-cost" class="in" type="number" inputmode="decimal" min="0" step="0.01" value=${cost} onInput=${(x) => setCost(x.target.value)} placeholder="0" /></div>
       <div class="field"><label for="w-sp">校友会承担（加元）</label><input id="w-sp" class="in" type="number" inputmode="decimal" min="0" step="0.01" value=${sponsor} onInput=${(x) => setSponsor(x.target.value)} placeholder="0" />
