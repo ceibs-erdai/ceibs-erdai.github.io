@@ -1657,7 +1657,7 @@ function AddGuest({ e, onAdded }) {
     let s;
     try { s = await api.team.addGuest(e.id, { name: name.trim(), party, wechat: wechat.trim(), isNew }); }
     catch (x) { UI.toast(errText(x)); setBusy(false); return; }
-    UI.toast(s.status === "waitlist" ? `名额满了，${name.trim()} 进了候补` : `已加上 ${name.trim()}`);
+    UI.toast(s.status === "waitlist" ? `名额不够，${name.trim()} 进了候补` : `已加上 ${name.trim()}`);
     setName(""); setParty(1); setWechat(""); setIsNew(false); setBusy(false);
     onAdded();
   }
@@ -1799,12 +1799,13 @@ function TeamEvent({ slug }) {
     ${e.status === "pending" && html`<div class="notice row between"><span>这场还在等审核。</span><span class="row">
       <button class="btn btn-primary btn-sm" onClick=${() => patch({ status: "published" }, "已上线")}>通过并上线</button>
       <button class="btn btn-ghost btn-sm" onClick=${() => patch({ status: "rejected" }, "已退回")}>退回</button></span></div>`}
-    ${e.status === "published" && !isPast(e) && html`<div class="row">
-      <button class="btn btn-quiet btn-sm" onClick=${() => patch({ closed: !e.closed }, e.closed ? "重新开放报名" : "已截止报名")}>${e.closed ? "重新开放报名" : "截止报名"}</button>
+    ${e.status === "published" && html`<div class="row">
+      ${!isPast(e) && html`<button class="btn btn-quiet btn-sm" onClick=${() => patch({ closed: !e.closed }, e.closed ? "重新开放报名" : "已截止报名")}>${e.closed ? "重新开放报名" : "截止报名"}</button>`}
       ${confirmCancel
         ? html`<span class="row"><button class="btn btn-danger btn-sm" onClick=${() => patch({ status: "cancelled" }, "活动已取消")}>确认取消这场活动</button><button class="btn btn-ghost btn-sm" onClick=${() => setConfirmCancel(false)}>算了</button></span>`
         : html`<button class="btn btn-ghost btn-sm" onClick=${() => setConfirmCancel(true)}>取消活动</button>`}
     </div>`}
+    ${e.status === "published" && confirmCancel && html`<p class="hint" style="margin-top:-8px">取消后这场不会再出现在首页、预算和年度回顾里；报名的人打开链接会看到「已取消」。之后还能恢复。</p>`}
     ${e.status === "cancelled" && html`<div class="notice row between"><span>这场已取消，报名的人打开链接会看到提示。</span><button class="btn btn-quiet btn-sm" onClick=${() => patch({ status: "published" }, "已恢复")}>恢复</button></div>`}
     <section><h2 class="sub">名单 · ${going.length} 组 ${st.going} 人</h2>${going.length ? list(going) : html`<p class="small muted">还没有人报名。</p>`}</section>
     ${waiting.length > 0 && html`<section><h2 class="sub">候补 · ${waiting.length} 组 ${st.waiting} 人</h2>${list(waiting)}<p class="hint">有人取消或调高人数上限时，系统会按顺序自动补上。</p></section>`}
