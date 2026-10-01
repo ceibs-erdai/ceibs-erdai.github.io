@@ -1,0 +1,39 @@
+name: 保持数据库在线
+
+# Supabase 免费版连续 7 天没什么访问就会自动暂停。这个任务每天访问一次数据库。
+# 访问失败（比如已经被暂停）时任务会变红，GitHub 会发邮件提醒：看到就去 Supabase 控制台点 Restore。
+# 公开仓库连续 60 天没有提交，GitHub 会停掉定时任务，所以每月 1 号自动提交一次心跳续上。
+
+on:
+  schedule:
+    - cron: "23 14 * * *"   # 每天 UTC 14:23，多伦多上午 9–10 点
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 访问一次数据库
+        run: |
+          URL=$(grep -oE 'https://[a-z0-9]+\.supabase\.co' index.html | head -n 1)
+          KEY=$(grep -oE 'sb_publishable_[A-Za-z0-9_-]+' index.html | head -n 1)
+          curl -fsS --retry 3 --retry-delay 30 -X POST "$URL/rest/v1/rpc/list_events" \
+            -H "apikey: $KEY" -H "Content-Type: application/json" -d '{}' -o /dev/null
+          echo "数据库正常：$URL"
+
+      - name: 每月 1 号提交一次心跳
+        if: github.event_name == 'schedule'
+        run: |
+          if [ "$(date -u +%d)" = "01" ]; then
+            date -u +%Y-%m-%dT%H:%M:%SZ > .keepalive
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .keepalive
+            git commit -m "每月心跳：防止定时任务被 GitHub 停用"
+            git push
+          fi
