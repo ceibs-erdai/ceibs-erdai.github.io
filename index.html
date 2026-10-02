@@ -906,7 +906,8 @@ function demoSeed() {
     let got = 0, i = 0;
     const person = (status) => {
       const size = opt.pairs && i % 4 === 2 && (status === "waitlist" || got + 2 <= going) ? 2 : 1;
-      signups.push({ id: `${id}-s${i}`, event_id: id, name: NAMES[(off + i) % NAMES.length], party_size: size, wechat: i % 3 === 0 ? null : `wxid_demo${i + 1}`, is_new: opt.newEvery ? i % opt.newEvery === 1 : false, note: i === 2 && opt.note ? opt.note : null, status, attended: status === "going" && !!opt.attended && i % 7 !== 5, source: i % 9 === 4 ? "team" : "web", cancel_token: `${id}-t${i}`, cancel_reason: null, created_at: new Date(created + (i + 1) * 3 * 3600e3).toISOString(), cancelled_at: null });
+      const ni = (off + i) % NAMES.length, isNew = opt.newEvery ? i % opt.newEvery === 1 : false, attended = status === "going" && !!opt.attended && i % 7 !== 5;
+      signups.push({ id: `${id}-s${i}`, event_id: id, name: NAMES[ni], party_size: size, wechat: ni % 3 === 0 ? null : `wxid_demo${ni + 1}`, is_new: isNew, note: i === 2 && opt.note ? opt.note : null, status, attended, verified: attended, referrer: isNew ? ["Kevin 带来的", "王总（EMBA 2015）的女儿", "Lily 的室友"][i % 3] : null, source: i % 9 === 4 ? "team" : "web", cancel_token: `${id}-t${i}`, cancel_reason: null, created_at: new Date(created + (i + 1) * 3 * 3600e3).toISOString(), cancelled_at: null });
       i++;
       return size;
     };
@@ -1674,6 +1675,7 @@ function TeamEvents({ events, reload }) {
   const toWrap = live.filter((e) => isPast(e) && !e.wrapped).reverse();
   const wrapped = live.filter((e) => e.wrapped).reverse();
   const other = events.filter((e) => e.status === "cancelled" || e.status === "rejected");
+  const vk = new Set(events.flatMap((e) => (e.signups || []).filter((s) => s.verified).map(personKey)).filter(Boolean));
   const section = (title, list, hint, extra) => html`<section>
     <h2 class="sub">${title}${extra || null}</h2>
     ${list.length ? html`<div class="tlist">${list.map((e) => html`<${TeamRow} key=${e.id} e=${e} hint=${hint && hint(e)} />`)}</div>` : html`<p class="small muted">暂时没有。</p>`}
@@ -1681,7 +1683,7 @@ function TeamEvents({ events, reload }) {
   return html`<div class="stack">
     <a class="btn btn-primary" style="justify-self:start" href="#/team/new" onClick=${nav("#/team/new")}>＋ 新建活动</a>
     ${pending.length > 0 && html`<section class="stack-sm"><h2 class="sub">待审核 <span class="num-dot">${pending.length}</span></h2>${pending.map((e) => html`<${PendingCard} key=${e.id} e=${e} reload=${reload} />`)}</section>`}
-    ${section("即将开始", upcoming, (e) => { const n = toNotifyOf(e.signups).length; const v = (e.signups || []).filter((s) => s.status !== "cancelled" && s.is_new && !s.verified).length; return n ? [`待通知 ${n}`, "hot"] : v ? [`待核实 ${v}`, "warn"] : e.closed ? ["已截止", ""] : hasStarted(e) ? ["进行中", "hot"] : null; })}
+    ${section("即将开始", upcoming, (e) => { const n = toNotifyOf(e.signups).length; const v = (e.signups || []).filter((s) => s.status !== "cancelled" && !s.verified && !vk.has(personKey(s))).length; return n ? [`待通知 ${n}`, "hot"] : v ? [`待核实 ${v}`, "warn"] : e.closed ? ["已截止", ""] : hasStarted(e) ? ["进行中", "hot"] : null; })}
     ${toWrap.length > 0 && section("待结算", toWrap, () => ["去结算", "warn"], html` <span class="num-dot">${toWrap.length}</span>`)}
     ${section("已结算", wrapped, (e) => [`实到 ${e.actual_count}`, "ok"])}
     ${other.length > 0 && html`<section>
@@ -1774,7 +1776,7 @@ function SignupRow({ s, e, known, onChange }) {
     <div class="srow-main">
       <p class="srow-name">${s.name}${s.party_size > 1 ? html`<span class="muted" style="font-weight:500">×${s.party_size}</span>` : null}
         ${s.is_new ? html`<span class="pill hot">新朋友</span>` : null}${s.source === "team" ? html`<span class="pill">代报</span>` : null}
-        ${s.verified ? html`<span class="pill ok">已核实</span>` : known ? html`<span class="pill ok">以前核实过</span>` : s.is_new ? html`<span class="pill warn">待核实</span>` : null}
+        ${s.verified ? html`<span class="pill ok">已核实</span>` : known ? html`<span class="pill ok">以前核实过</span>` : s.status !== "cancelled" ? html`<span class="pill warn">待核实</span>` : null}
         ${s.status === "going" && s.promoted_at ? html`<span class=${"pill " + (s.notified_at ? "" : "warn")}>${s.notified_at ? "候补转正 · 已通知" : "刚从候补补上"}</span>` : null}</p>
       <p class="tiny muted">${s.wechat ? `微信 ${s.wechat} · ` : ""}${fmtStamp(s.created_at)}报名</p>
       ${s.referrer ? html`<p class="tiny">介绍人：${s.referrer}</p>` : null}
@@ -1913,12 +1915,12 @@ function TeamEvent({ slug }) {
   const [d, setD] = useState(undefined);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [showGone, setShowGone] = useState(false);
-  const [known, setKnown] = useState({ names: new Set(), wechats: new Set() });
+  const [known, setKnown] = useState(() => new Set());
   const load = useCallback(async () => { try { setD(await api.team.event(slug)); } catch (x) { setD({ error: x }); } }, [slug]);
   useEffect(() => { load(); }, [load]);
-  // 别的活动里核实过的人（按微信号认，没留微信就按名字），这次就不用再问一遍
+  // 别的活动里核实过的人，这次就不用再问一遍。名字和微信号都对上才算：只看名字的话，冒名的人也会显示成「以前核实过」
   useEffect(() => {
-    api.team.verifiedPeople().then((list) => setKnown({ names: new Set(list.map((p) => normName(p.name))), wechats: new Set(list.filter((p) => p.wechat).map((p) => normName(p.wechat))) })).catch(() => {});
+    api.team.verifiedPeople().then((list) => setKnown(new Set(list.map(personKey).filter(Boolean)))).catch(() => {});
   }, [d]);
   if (d === undefined) return html`<${Loading} />`;
   if (d === null) return html`<${NotFound} team />`;
@@ -1932,10 +1934,11 @@ function TeamEvent({ slug }) {
   const patch = async (p, msg) => { try { await api.team.patchEvent(e.id, p); } catch (x) { UI.toast(errText(x)); return; } if (msg) UI.toast(msg); setConfirmCancel(false); load(); };
   const STATUS = { published: ["已上线", "ok"], pending: ["待审核", "warn"], cancelled: ["已取消", ""], rejected: ["已退回", ""] };
   const [sl, stone] = STATUS[e.status] || ["", ""];
-  const isKnown = (s) => !s.verified && (s.wechat ? known.wechats.has(normName(s.wechat)) : known.names.has(normName(s.name)));
+  const isKnown = (s) => !s.verified && known.has(personKey(s));
   const list = (items) => html`<ul class="srows">${items.map((s) => html`<${SignupRow} key=${s.id} s=${s} e=${e} known=${isKnown(s)} onChange=${load} />`)}</ul>`;
   const toNotify = toNotifyOf(signups);
-  const toVerify = signups.filter((s) => s.status !== "cancelled" && s.is_new && !s.verified && !isKnown(s));
+  // 不只看新朋友：「第一次参加」是自己勾的，不勾就能跳过介绍人
+  const toVerify = signups.filter((s) => s.status !== "cancelled" && !s.verified && !isKnown(s));
   return html`<div class="stack">
     <button class="back" onClick=${nav("#/team")}>← 核心团队</button>
     <header class="stack-xs">
@@ -1967,7 +1970,7 @@ function TeamEvent({ slug }) {
     </div>`}
     ${e.status === "published" && confirmCancel && html`<p class="hint" style="margin-top:-8px">取消后这场不会再出现在首页、预算和年度回顾里；报名的人打开链接会看到「已取消」。之后还能恢复。</p>`}
     ${e.status === "cancelled" && html`<div class="notice row between"><span>这场已取消，报名的人打开链接会看到提示。</span><button class="btn btn-quiet btn-sm" onClick=${() => patch({ status: "published" }, "已恢复")}>恢复</button></div>`}
-    ${toVerify.length > 0 && html`<div class="notice">有 ${toVerify.length} 位新朋友还没核实：${toVerify.map((s) => (s.referrer ? `${s.name}（介绍人：${s.referrer}）` : s.name)).join("、")}。可以找介绍人或对应的校友确认一下，确认后在名单里点「核实」。</div>`}
+    ${toVerify.length > 0 && html`<div class="notice">有 ${toVerify.length} 位还没核实：${toVerify.map((s) => (s.is_new ? `${s.name}（新朋友${s.referrer ? `，介绍人：${s.referrer}` : ""}）` : s.name)).join("、")}。认识的直接点「核实」，不认识的找介绍人或对应的校友确认。核实过的人下次用同样的名字和微信号报名，会自动显示「以前核实过」。</div>`}
     ${toNotify.length > 0 && html`<div class="notice warn-card">有 ${toNotify.length} 组刚从候补补上：${toNotify.map((s) => s.name).join("、")}。系统不会自动通知他们，在下面名单里点「复制通知」，发到微信。</div>`}
     <section><h2 class="sub">名单 · ${going.length} 组 ${st.going} 人</h2>${going.length ? list(going) : html`<p class="small muted">还没有人报名。</p>`}</section>
     ${waiting.length > 0 && html`<section><h2 class="sub">候补 · ${waiting.length} 组 ${st.waiting} 人</h2>${list(waiting)}<p class="hint">有人取消或调高人数上限时，系统会按顺序自动补上。</p></section>`}
@@ -2063,6 +2066,7 @@ function Budget({ events, settings, reload }) {
   </div>`;
 }
 const normName = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, "");
+const personKey = (s) => (s && s.wechat ? normName(s.name) + "|" + normName(s.wechat) : null);
 function buildReview(events, year, settings) {
   const list = events.filter((e) => e.status === "published" && yearOf(e.starts_at) === year).sort(byStart);
   const done = list.filter(isPast), planned = list.filter((e) => !isPast(e));
