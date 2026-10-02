@@ -261,6 +261,9 @@ fieldset.team-only legend { padding: 0 6px; font-size: 12.5px; font-weight: 700;
 .rich ul, .rich ol { padding-left: 1.3em; display: grid; gap: 4px; }
 .card { padding: 16px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--card); }
 .notice { padding: 14px 16px; border-radius: var(--r-md); background: var(--tile); font-size: 14.5px; }
+.safety { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: var(--r-md); background: var(--jade-soft); }
+.safety p { min-width: 0; color: var(--ink); overflow-wrap: anywhere; }
+.mseal.safe { width: 22px; height: 22px; margin-top: 1px; font-size: 13px; background: var(--jade); color: var(--on-jade); }
 .err-box { display: grid; gap: 10px; justify-items: start; }
 .stamp { flex: none; display: inline-grid; place-items: center; min-width: 60px; height: 60px; padding: 4px 6px; border: 2.5px solid var(--seal-text); border-radius: 6px; color: var(--seal-text); font: 900 15px/1.1 var(--f-display); letter-spacing: .06em; transform: rotate(-8deg); }
 .stamp.wait { border-color: var(--amber); color: var(--amber); }
@@ -384,12 +387,15 @@ const CONFIG = {
   team: ["Ellesse", "Harry", "Chen"],  // 页脚显示的核心团队
   contact: "",                         // 出问题找谁，比如「微信 harry_xx」；留空就不显示
   yearTarget: [6, 10],                 // 理事会建议每年 6–10 场
+  // 每场活动页和群公告都会带上这段提醒（会长要求每次都说明）。{team} 会换成上面的核心团队名单
+  safety: "Trust everyone, but verify everything。认识新朋友时多留个心眼；凡是涉及转账、借钱、代购、投资理财的事，先找核心团队（{team}）核实对方身份。活动费用只付给活动页写明的收款人。",
 };
 /* ==================================================================== */
 
 const SUPABASE_JS = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js";
 const LIVE = !CONFIG.supabaseUrl.startsWith("PASTE") && !CONFIG.supabaseKey.startsWith("PASTE");
 const TZ = "America/Toronto";
+const SAFETY = CONFIG.safety.replace("{team}", CONFIG.team.join("、"));
 const { html, render, Component, useState, useEffect, useMemo, useRef, useCallback } = window.htmPreact;
 
 /* ---------------------------------------------------------------- 小工具 */
@@ -533,6 +539,7 @@ const ERR = {
   bad_image: "这张图打不开，换成 JPG 或 PNG 再试。",
   network: "网络好像断了，检查一下再试。",
   bad_code: "报名口令不对。口令一般在群公告里，也可以问组织者。",
+  referrer_required: "第一次来的朋友，请写一下你是哪位校友的家属，或者谁带你来的。",
 };
 function errText(x) {
   const msg = String((x && x.message) || x || "");
@@ -597,11 +604,13 @@ const shareUrl = (e) => (FRAMED ? null : location.href.split("#")[0] + "#/e/" + 
 function announce(e, url, code) {
   const lines = [`【${CONFIG.name}】${e.title}`, `🕖 ${fmtWhen(e)}`, `📍 ${e.location}`];
   if (e.cost_note) lines.push(`💰 ${e.cost_note}`);
+  if (e.payee) lines.push(`💳 收款人：${e.payee}（费用只付给 TA）`);
   lines.push(`👥 ${e.capacity != null ? `已报名 ${e.going} / ${e.capacity} 人` : `已报名 ${e.going} 人`}`);
   if (e.host_name) lines.push(`🙋 组织：${e.host_name}${e.host_contact ? `（${e.host_contact}）` : ""}`);
   if (code) lines.push(`🔑 报名口令：${code}`);
   else if (e.needs_code) lines.push("🔑 报名需要口令，问组织者");
   if (url) lines.push(`报名 👉 ${url}`);
+  lines.push("", `🛡 安全提醒：${SAFETY}`);
   return lines.join("\n");
 }
 
@@ -663,8 +672,8 @@ function useRoute() {
    页面只管调用 api.xxx，不关心后面是哪个。
    ==================================================================== */
 
-const PUBLIC_FIELDS = ["id", "slug", "status", "title", "starts_at", "ends_at", "location", "map_url", "categories", "capacity", "max_party", "waitlist", "closed", "cost_note", "description", "host_name", "host_contact", "cover_url"];
-const EVENT_DEFAULTS = { join_code: null, status: "published", ends_at: null, map_url: null, categories: [], capacity: null, max_party: 4, waitlist: true, closed: false, cost_note: null, description: null, host_name: null, host_contact: null, cover_url: null, proposer_note: null, sponsor_plan: null, board_ok: false, wrapped: false, actual_count: null, actual_cost: null, sponsor_amount: null, wrap_notes: null, receipts: [] };
+const PUBLIC_FIELDS = ["payee", "id", "slug", "status", "title", "starts_at", "ends_at", "location", "map_url", "categories", "capacity", "max_party", "waitlist", "closed", "cost_note", "description", "host_name", "host_contact", "cover_url"];
+const EVENT_DEFAULTS = { payee: null, join_code: null, status: "published", ends_at: null, map_url: null, categories: [], capacity: null, max_party: 4, waitlist: true, closed: false, cost_note: null, description: null, host_name: null, host_contact: null, cover_url: null, proposer_note: null, sponsor_plan: null, board_ok: false, wrapped: false, actual_count: null, actual_cost: null, sponsor_amount: null, wrap_notes: null, receipts: [] };
 
 function liveApi() {
   const sb = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey, { auth: { persistSession: true, storageKey: "erdai-auth" } });
@@ -695,8 +704,13 @@ function liveApi() {
       return id ? q(sb.from("events").update(rest).eq("id", id).select().single()) : q(sb.from("events").insert(rest).select().single());
     },
     patchEvent: (id, patch) => q(sb.from("events").update(patch).eq("id", id).select().single()),
-    addGuest: (eventId, f) => rpc("team_add_guest", { p_event: eventId, p_name: f.name, p_party: f.party, p_wechat: f.wechat || null, p_is_new: !!f.isNew, p_note: f.note || null }),
+    addGuest(eventId, f) {
+      const args = { p_event: eventId, p_name: f.name, p_party: f.party, p_wechat: f.wechat || null, p_is_new: !!f.isNew, p_note: f.note || null };
+      if (f.referrer) args.p_referrer = f.referrer;
+      return rpc("team_add_guest", args);
+    },
     patchSignup: (id, patch) => q(sb.from("signups").update(patch).eq("id", id).select().single()),
+    verifiedPeople: () => q(sb.from("signups").select("name,wechat").eq("verified", true)).catch(() => []),
     settings: () => q(sb.from("settings").select("*").eq("id", 1).single()),
     saveSettings: (patch) => q(sb.from("settings").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", 1).select().single()),
     async uploadCover(blob) {
@@ -734,6 +748,7 @@ function liveApi() {
     join(slug, f) {
       const args = { p_slug: slug, p_name: f.name, p_party: f.party, p_wechat: f.wechat || null, p_is_new: !!f.isNew, p_note: f.note || null };
       if (f.code) args.p_code = f.code;  // 只在要口令时才传：没升级的数据库也能照常报名
+      if (f.referrer) args.p_referrer = f.referrer;
       return rpc("join_event", args);
     },
     mySignup: (token) => rpc("my_signup", { p_token: token }),
@@ -778,7 +793,7 @@ function demoApi() {
     const fits = e.capacity == null || goingHeads(e.id) + f.party <= e.capacity;
     const st = fits ? "going" : source === "team" || e.waitlist ? "waitlist" : null;
     if (!st) fail("full");
-    const s = { id: uid(), event_id: e.id, name: f.name.slice(0, 40), party_size: f.party, wechat: (f.wechat || "").slice(0, 60) || null, is_new: !!f.isNew, note: (f.note || "").slice(0, 300) || null, status: st, attended: false, source, cancel_token: uid(), cancel_reason: null, created_at: new Date().toISOString(), cancelled_at: null };
+    const s = { id: uid(), event_id: e.id, name: f.name.slice(0, 40), party_size: f.party, wechat: (f.wechat || "").slice(0, 60) || null, is_new: !!f.isNew, note: (f.note || "").slice(0, 300) || null, status: st, attended: false, verified: false, referrer: String(f.referrer || "").trim().slice(0, 60) || null, source, cancel_token: uid(), cancel_reason: null, created_at: new Date().toISOString(), cancelled_at: null };
     db.signups.push(s); save();
     return status(s);
   }
@@ -820,6 +835,7 @@ function demoApi() {
     async removeReceipt() {},
     async backup() { return clone({ exported_at: new Date().toISOString(), site: CONFIG.name, events: db.events, signups: db.signups, settings: db.settings }); },
     async changePassword() {},
+    async verifiedPeople() { return clone(db.signups.filter((s) => s.verified).map((s) => ({ name: s.name, wechat: s.wechat }))); },
     receiptMax: 1100,
   };
   return {
@@ -836,6 +852,7 @@ function demoApi() {
       if (hasStarted(e)) fail("started");
       const code = String(e.join_code || "").trim().toLowerCase();
       if (code && String(f.code || "").trim().toLowerCase() !== code) fail("bad_code");
+      if (f.isNew && !String(f.referrer || "").trim()) fail("referrer_required");
       if (!(f.party >= 1 && f.party <= e.max_party)) fail("party_size");
       if (ofEvent(e.id).some((s) => s.status !== "cancelled" && s.name.trim().toLowerCase() === name.toLowerCase())) fail("duplicate");
       return insert(e, { ...f, name }, "web");
@@ -908,9 +925,9 @@ function demoSeed() {
   const hike = onDow(16, 0, 10);
   add({ title: "High Park 秋叶徒步", categories: ["outdoor"], starts_at: hike, ends_at: sameDay(hike, 14), location: "High Park · Bloor St W 正门", capacity: 25, cost_note: "免费，自带午餐和水", host_name: "Chen", host_contact: "群里 @Chen", description: "枫叶最红的那两周。全程约 6 公里，路平，穿运动鞋就行。\n走完在 Grenadier Café 附近野餐。" , sponsor_plan: 0 }, 9, { newEvery: 3 });
   const bad = onDow(22, 5, 19, 30);
-  add({ title: "周五羽毛球局", categories: ["sport"], starts_at: bad, ends_at: sameDay(bad, 22), location: "Scarborough 羽毛球馆（订到场后公布）", capacity: 12, max_party: 2, cost_note: "场地费 AA 约 $12/人", host_name: "Harry", description: "订了 3 片场，双打轮换。水平不限，带拍子；没拍子的说一声，有备用的。", sponsor_plan: 60 }, 12, { waiting: 3 });
+  add({ title: "周五羽毛球局", categories: ["sport"], starts_at: bad, ends_at: sameDay(bad, 22), location: "Scarborough 羽毛球馆（订到场后公布）", capacity: 12, max_party: 2, payee: "Harry · e-Transfer", cost_note: "场地费 AA 约 $12/人", host_name: "Harry", description: "订了 3 片场，双打轮换。水平不限，带拍子；没拍子的说一声，有备用的。", sponsor_plan: 60 }, 12, { waiting: 3 });
   const pot = onDow(28, 5, 19);
-  add({ title: "火锅夜", categories: ["food"], starts_at: pot, ends_at: sameDay(pot, 21, 30), location: "North York · Yonge & Sheppard 附近", capacity: 20, cost_note: "AA 约 $35/人，校友会每人补贴 $10", host_name: "Ellesse", description: "天冷了，吃火锅。订了两张大桌，鸳鸯锅。", sponsor_plan: 200 }, 18, { pairs: true, newEvery: 4 });
+  add({ title: "火锅夜", categories: ["food"], starts_at: pot, ends_at: sameDay(pot, 21, 30), location: "North York · Yonge & Sheppard 附近", capacity: 20, payee: "Ellesse · e-Transfer", cost_note: "AA 约 $35/人，校友会每人补贴 $10", host_name: "Ellesse", description: "天冷了，吃火锅。订了两张大桌，鸳鸯锅。", sponsor_plan: 200 }, 18, { pairs: true, newEvery: 4 });
   const car = onDow(40, 4, 19);
   add({ title: "前辈聊聊：金融 / 科技求职", categories: ["career"], starts_at: car, ends_at: sameDay(car, 21), location: "UofT St. George 附近（会议室待定）", capacity: 40, join_code: "ceibs", cost_note: "免费，提供茶点", host_name: "Harry", description: "（演示：这场要报名口令，口令是 ceibs）\n请三位在银行和科技公司工作的校友前辈，每人讲 15 分钟，之后自由交流。\n- 实习和全职怎么找\n- 简历怎么写、面试怎么准备\n- 工签和身份的现实问题\n带简历来的话，可以现场帮你看。", sponsor_plan: 600 }, 22, { newEvery: 3 });
   const mkt = onDow(62, 6, 17);
@@ -1193,6 +1210,7 @@ function Facts({ e }) {
     <dt>时间</dt><dd>${fmtWhen(e)}</dd>
     <dt>地点</dt><dd>${e.location} <a class="link" href=${mapUrl(e)} target="_blank" rel="noopener">地图</a></dd>
     ${e.cost_note ? html`<dt>费用</dt><dd>${e.cost_note}</dd>` : null}
+    ${e.payee ? html`<dt>收款人</dt><dd><strong>${e.payee}</strong><span class="hint block">活动费用只付给这个人。其他人以活动名义找你要钱，先问核心团队。</span></dd>` : null}
     <dt>组织</dt><dd>${e.host_name || "核心团队"}${e.host_contact ? html`<span class="muted"> · ${e.host_contact}</span>` : null}</dd>
   </dl>`;
 }
@@ -1217,6 +1235,7 @@ function JoinForm({ e, onJoined }) {
   const [isNew, setIsNew] = useState(false);
   const [note, setNote] = useState("");
   const [code, setCode] = useState("");
+  const [referrer, setReferrer] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const left = spotsLeft(e);
@@ -1226,9 +1245,10 @@ function JoinForm({ e, onJoined }) {
     ev.preventDefault();
     if (!name.trim()) { setErr(ERR.name_required); return; }
     if (e.needs_code && !code.trim()) { setErr("先填报名口令。"); return; }
+    if (isNew && !referrer.trim()) { setErr(ERR.referrer_required); return; }
     setBusy(true); setErr("");
     let s;
-    try { s = await api.join(e.slug, { name: name.trim(), party, wechat: wechat.trim(), isNew, note: note.trim(), code: code.trim() }); }
+    try { s = await api.join(e.slug, { name: name.trim(), party, wechat: wechat.trim(), isNew, note: note.trim(), code: code.trim(), referrer: isNew ? referrer.trim() : "" }); }
     catch (x) { setErr(errText(x)); setBusy(false); return; }
     Mine.put(e.id, { token: s.token, slug: e.slug });
     Me.set({ name: name.trim(), wechat: wechat.trim() });
@@ -1253,6 +1273,9 @@ function JoinForm({ e, onJoined }) {
       <p class="hint">方便组织者拉你进活动群。只有组织者看得到。</p></div>
     <label class="check" for="j-new"><input id="j-new" type="checkbox" checked=${isNew} onChange=${(x) => setIsNew(x.target.checked)} />
       <span>我是第一次参加 / 刚到${CONFIG.city}<span class="hint block">组织者会特别招呼一下新朋友。</span></span></label>
+    ${isNew && html`<div class="field"><label for="j-ref">你是哪位校友的家属，或者谁带你来的？<${Req} /></label>
+      <input id="j-ref" class="in" required value=${referrer} onInput=${(x) => setReferrer(x.target.value)} maxlength="60" placeholder="比如：XX 级 XX 校友的女儿 / Amy 带我来的" />
+      <p class="hint">方便组织者认识你、确认身份。只有核心团队看得到。</p></div>`}
     <div class="field"><label for="j-note">想跟组织者说的 <span class="opt-tag">选填</span></label>
       <textarea id="j-note" class="in" rows="2" maxlength="300" value=${note} onInput=${(x) => setNote(x.target.value)} placeholder="比如忌口、会晚到"></textarea></div>
     ${err && html`<p class="err" role="alert">${err}</p>`}
@@ -1342,6 +1365,7 @@ function EventPage({ slug }) {
     ${!cancelled && html`<${CountBlock} e=${e} />`}
     <${Facts} e=${e} />
     ${e.description && html`<${RichText} text=${e.description} />`}
+    ${!cancelled && !isPast(e) && html`<${SafetyNote} />`}
     ${action}
     ${!cancelled && html`<${WhoGoing} e=${e} />`}
     ${!cancelled && !isPast(e) && html`<${ShareRow} e=${e} />`}
@@ -1350,7 +1374,7 @@ function EventPage({ slug }) {
 
 /* ---------------------------------------------------- 发起 / 编辑活动 */
 
-const EMPTY_FORM = { join_code: "", title: "", categories: [], start: "", end: "", location: "", map_url: "", capacity: "", max_party: 4, waitlist: true, cost_note: "", description: "", host_name: "", host_contact: "", proposer_note: "", cover_url: "", sponsor_plan: "", board_ok: false };
+const EMPTY_FORM = { payee: "", join_code: "", title: "", categories: [], start: "", end: "", location: "", map_url: "", capacity: "", max_party: 4, waitlist: true, cost_note: "", description: "", host_name: "", host_contact: "", proposer_note: "", cover_url: "", sponsor_plan: "", board_ok: false };
 function toForm(e) {
   const f = { ...EMPTY_FORM };
   for (const k of Object.keys(EMPTY_FORM)) if (e[k] != null) f[k] = e[k];
@@ -1358,7 +1382,7 @@ function toForm(e) {
 }
 function EventForm({ mode, initial, settings, onDone }) {
   const team = mode !== "propose";
-  const [f, setF] = useState(() => (initial ? toForm(initial) : { ...EMPTY_FORM, host_name: mode === "propose" ? Me.get().name || "" : "" }));
+  const [f, setF] = useState(() => (initial ? toForm(initial) : { ...EMPTY_FORM, host_name: mode === "propose" ? Me.get().name || "" : "", join_code: mode === "team-new" ? newCode() : "" }));
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [coverBusy, setCoverBusy] = useState(false);
@@ -1379,6 +1403,7 @@ function EventForm({ mode, initial, settings, onDone }) {
     if (f.map_url.trim() && !/^https?:\/\//i.test(f.map_url.trim())) return "地图链接要以 http 开头，或者留空。";
     if (f.capacity !== "" && !(/^\d+$/.test(String(f.capacity)) && +f.capacity >= 1 && +f.capacity <= 500)) return "人数上限填 1–500 的整数，不限就留空。";
     if (!f.host_name.trim()) return "写一下组织者的名字。";
+    if (/[$＄]|AA|e-?transfer|转账/i.test(f.cost_note) && !f.payee.trim()) return "这场要收钱，写一下收款人：谁收钱、怎么付（比如「Harry · e-Transfer」）。";
     if (team && f.sponsor_plan !== "" && !(+f.sponsor_plan >= 0)) return "校友会承担的金额填一个数字。";
     return "";
   }
@@ -1403,6 +1428,7 @@ function EventForm({ mode, initial, settings, onDone }) {
       host_name: f.host_name.trim(), host_contact: f.host_contact.trim() || null,
     };
     if (mode === "propose") p.proposer_note = f.proposer_note.trim() || null;
+    if (f.payee.trim() || (initial && initial.payee)) p.payee = f.payee.trim() || null;
     if (team) {
       p.cover_url = f.cover_url || null; p.sponsor_plan = f.sponsor_plan === "" ? null : +f.sponsor_plan; p.board_ok = !!f.board_ok;
       if (f.join_code.trim() || (initial && initial.join_code)) p.join_code = f.join_code.trim() || null;
@@ -1444,6 +1470,9 @@ function EventForm({ mode, initial, settings, onDone }) {
       <span>满了以后开放候补<span class="hint block">有人取消时，系统按报名顺序自动补上。</span></span></label>
     <div class="field"><label for="f-cost">费用 <span class="opt-tag">选填</span></label>
       <input id="f-cost" class="in" maxlength="120" value=${f.cost_note} onInput=${set("cost_note")} placeholder="比如：免费 / AA 约 $30，校友会每人补贴 $10" /></div>
+    <div class="field"><label for="f-payee">收款人 <span class="opt-tag">收费的活动必填</span></label>
+      <input id="f-payee" class="in" maxlength="80" value=${f.payee} onInput=${set("payee")} placeholder="比如：Harry · e-Transfer" />
+      <p class="hint">活动页会写明「费用只付给这个人」，防止有人冒充组织者收钱。</p></div>
     <div class="field"><label for="f-desc">介绍</label>
       <textarea id="f-desc" class="in" rows="7" maxlength="5000" value=${f.description} onInput=${set("description")} placeholder="做什么、要带什么、几点到……"></textarea>
       <p class="hint">*两边加星号* 会加粗，「- 」开头的行会变成列表，链接自动可点。${f.description.length} / 5000</p></div>
@@ -1464,7 +1493,7 @@ function EventForm({ mode, initial, settings, onDone }) {
         <p class="hint">用来算年度预算。活动结束后在「结算」里填实际花了多少。</p></div>
       <div class="field"><label for="f-code">报名口令 <span class="opt-tag">选填</span></label>
         <input id="f-code" class="in" maxlength="20" value=${f.join_code} onInput=${set("join_code")} autocapitalize="off" autocomplete="off" placeholder="比如 ceibs2026" />
-        <p class="hint">填了以后要输入口令才能报名，防止链接被转出去后有外人乱报。口令只发在群里；留空就不需要。</p></div>
+        <p class="hint">填了以后要输入口令才能报名，防止链接被转出去后有外人乱报。口令只发在群里；留空就不需要。新建活动时会自动生成一个。</p></div>
       ${big && html`<label class="check" for="f-board"><input id="f-board" type="checkbox" checked=${f.board_ok} onChange=${set("board_ok")} />
         <span>已经和理事会沟通过<span class="hint block">单场达到 ${money(settings.big_amount)} 算较大金额，按约定要提前沟通。</span></span></label>`}
     </fieldset>`}
@@ -1512,6 +1541,12 @@ function Help() {
     <section class="card stack"><h2 class="h-sec">自己组织</h2>
       <${QA} q="我也想组织一场">点右上角「发起活动」，写清楚时间、地点、人数。核心团队看过后就会上线，一般一两天内。<//>
       <${QA} q="需要经费？">在「给核心团队的话」里写预计花费。校友会每年有一笔活动经费，金额较大的话核心团队会先和理事会沟通。<//>
+    </section>
+    <section class="card stack"><h2 class="h-sec">安全须知</h2>
+      <${QA} q="为什么要特别提醒？">校友群里出现过冒用身份、涉嫌诈骗的事。我们欢迎大家带朋友来，但交朋友和涉及钱的时候要多核实一步：Trust everyone, but verify everything。<//>
+      <${QA} q="活动费用付给谁？">只付给活动页上写明的「收款人」。核心团队不会私下找你要钱，也不会让你转到陌生账户。<//>
+      <${QA} q="遇到可疑的人或事？">有人以活动的名义借钱、代购、推销理财，或者身份对不上，先别转账，告诉核心团队（${CONFIG.team.join("、")}）。<//>
+      <${QA} q="第一次来为什么要写介绍人？">方便组织者认识你、确认身份。写你是哪位校友的家属，或者是谁带你来的，只有核心团队看得到。<//>
     </section>
     <section class="card stack"><h2 class="h-sec">核心团队</h2>
       <${QA} q="核心团队做什么？">审核和发布活动、管理名单，活动结束后登记实到人数和收据，年底出一份小回顾给理事会。入口在页面最下面。<//>
@@ -1612,8 +1647,9 @@ function PendingCard({ e, reload }) {
   const [busy, setBusy] = useState(false);
   const act = async (status) => {
     setBusy(true);
-    try { await api.team.patchEvent(e.id, { status }); } catch (x) { UI.toast(errText(x)); setBusy(false); return; }
-    UI.toast(status === "published" ? "已上线" : "已退回");
+    const p = status === "published" ? approvePatch(e) : { status };
+    try { await api.team.patchEvent(e.id, p); } catch (x) { UI.toast(errText(x)); setBusy(false); return; }
+    UI.toast(status === "published" ? (p.join_code ? `已上线，报名口令 ${p.join_code}（复制群公告会带上）` : "已上线") : "已退回");
     reload();
   };
   return html`<article class="card stack-sm">
@@ -1645,7 +1681,7 @@ function TeamEvents({ events, reload }) {
   return html`<div class="stack">
     <a class="btn btn-primary" style="justify-self:start" href="#/team/new" onClick=${nav("#/team/new")}>＋ 新建活动</a>
     ${pending.length > 0 && html`<section class="stack-sm"><h2 class="sub">待审核 <span class="num-dot">${pending.length}</span></h2>${pending.map((e) => html`<${PendingCard} key=${e.id} e=${e} reload=${reload} />`)}</section>`}
-    ${section("即将开始", upcoming, (e) => { const n = toNotifyOf(e.signups).length; return n ? [`待通知 ${n}`, "hot"] : e.closed ? ["已截止", ""] : hasStarted(e) ? ["进行中", "hot"] : null; })}
+    ${section("即将开始", upcoming, (e) => { const n = toNotifyOf(e.signups).length; const v = (e.signups || []).filter((s) => s.status !== "cancelled" && s.is_new && !s.verified).length; return n ? [`待通知 ${n}`, "hot"] : v ? [`待核实 ${v}`, "warn"] : e.closed ? ["已截止", ""] : hasStarted(e) ? ["进行中", "hot"] : null; })}
     ${toWrap.length > 0 && section("待结算", toWrap, () => ["去结算", "warn"], html` <span class="num-dot">${toWrap.length}</span>`)}
     ${section("已结算", wrapped, (e) => [`实到 ${e.actual_count}`, "ok"])}
     ${other.length > 0 && html`<section>
@@ -1654,6 +1690,12 @@ function TeamEvents({ events, reload }) {
     </section>`}
     <${BackupCard} events=${events} />
   </div>`;
+}
+const newCode = () => String(Math.floor(1000 + Math.random() * 9000));
+// 审核通过时，没设口令就自动生成一个（默认开口令：链接被转出群也报不了名）
+const approvePatch = (e) => (e.join_code ? { status: "published" } : { status: "published", join_code: newCode() });
+function SafetyNote() {
+  return html`<aside class="safety" aria-label="安全提醒"><span class="mseal safe" aria-hidden="true">安</span><p class="small">${SAFETY}</p></aside>`;
 }
 const toNotifyOf = (signups) => (signups || []).filter((s) => s.status === "going" && s.promoted_at && !s.notified_at);
 function promotedText(e, s) {
@@ -1715,11 +1757,11 @@ function Kpi({ n, unit, label, sub }) {
   return html`<div class="kpi"><b>${n}${unit ? html`<small>${unit}</small>` : null}</b><span>${label}</span>${sub ? html`<em>${sub}</em>` : null}</div>`;
 }
 function rosterRows(signups) {
-  const rows = [["状态", "名字", "人数", "微信", "新朋友", "已签到", "留言", "报名时间", "来源"]];
-  for (const s of signups.filter((x) => x.status !== "cancelled")) rows.push([s.status === "going" ? "确认" : "候补", s.name, s.party_size, s.wechat || "", s.is_new ? "是" : "", s.attended ? "是" : "", s.note || "", fmtStamp(s.created_at), s.source === "team" ? "代报" : "网页"]);
+  const rows = [["状态", "名字", "人数", "微信", "新朋友", "介绍人", "已核实", "已签到", "留言", "报名时间", "来源"]];
+  for (const s of signups.filter((x) => x.status !== "cancelled")) rows.push([s.status === "going" ? "确认" : "候补", s.name, s.party_size, s.wechat || "", s.is_new ? "是" : "", s.referrer || "", s.verified ? "是" : "", s.attended ? "是" : "", s.note || "", fmtStamp(s.created_at), s.source === "team" ? "代报" : "网页"]);
   return rows;
 }
-function SignupRow({ s, e, onChange }) {
+function SignupRow({ s, e, known, onChange }) {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const patch = async (p, msg) => {
@@ -1732,13 +1774,16 @@ function SignupRow({ s, e, onChange }) {
     <div class="srow-main">
       <p class="srow-name">${s.name}${s.party_size > 1 ? html`<span class="muted" style="font-weight:500">×${s.party_size}</span>` : null}
         ${s.is_new ? html`<span class="pill hot">新朋友</span>` : null}${s.source === "team" ? html`<span class="pill">代报</span>` : null}
+        ${s.verified ? html`<span class="pill ok">已核实</span>` : known ? html`<span class="pill ok">以前核实过</span>` : s.is_new ? html`<span class="pill warn">待核实</span>` : null}
         ${s.status === "going" && s.promoted_at ? html`<span class=${"pill " + (s.notified_at ? "" : "warn")}>${s.notified_at ? "候补转正 · 已通知" : "刚从候补补上"}</span>` : null}</p>
       <p class="tiny muted">${s.wechat ? `微信 ${s.wechat} · ` : ""}${fmtStamp(s.created_at)}报名</p>
+      ${s.referrer ? html`<p class="tiny">介绍人：${s.referrer}</p>` : null}
       ${s.note ? html`<p class="note">${s.note}</p>` : null}
       ${s.cancel_reason ? html`<p class="tiny muted">取消原因：${s.cancel_reason}</p>` : null}
     </div>
     ${s.status !== "cancelled" && html`<div class="srow-act">
       ${s.status === "going" && s.promoted_at && !s.notified_at && html`<button class="btn btn-quiet btn-xs" disabled=${busy} onClick=${async () => { await copyOrShow(promotedText(e, s), "通知已复制，发给 TA 吧"); patch({ notified_at: new Date().toISOString() }); }}>复制通知</button>`}
+      <button class=${"tick" + (s.verified ? " on" : "")} aria-pressed=${!!s.verified} disabled=${busy} onClick=${() => patch({ verified: !s.verified }, s.verified ? "" : `已核实 ${s.name}`)}>${s.verified ? "已核实 ✓" : "核实"}</button>
       ${s.status === "going" && html`<button class=${"tick" + (s.attended ? " on" : "")} aria-pressed=${!!s.attended} disabled=${busy} onClick=${() => patch({ attended: !s.attended })}>${s.attended ? "已到 ✓" : "签到"}</button>`}
       ${s.status === "waitlist" && html`<button class="btn btn-quiet btn-xs" disabled=${busy} onClick=${() => patch({ status: "going" }, `${s.name} 已转为确认`)}>转为确认</button>`}
       ${confirm
@@ -1753,6 +1798,7 @@ function AddGuest({ e, onAdded }) {
   const [party, setParty] = useState(1);
   const [wechat, setWechat] = useState("");
   const [isNew, setIsNew] = useState(false);
+  const [referrer, setReferrer] = useState("");
   const [busy, setBusy] = useState(false);
   if (!open) return html`<button class="btn btn-quiet" style="justify-self:start" onClick=${() => setOpen(true)}>＋ 帮人报名（比如在微信里报的）</button>`;
   async function submit(ev) {
@@ -1760,10 +1806,10 @@ function AddGuest({ e, onAdded }) {
     if (!name.trim()) { UI.toast("先写名字"); return; }
     setBusy(true);
     let s;
-    try { s = await api.team.addGuest(e.id, { name: name.trim(), party, wechat: wechat.trim(), isNew }); }
+    try { s = await api.team.addGuest(e.id, { name: name.trim(), party, wechat: wechat.trim(), isNew, referrer: referrer.trim() }); }
     catch (x) { UI.toast(errText(x)); setBusy(false); return; }
     UI.toast(s.status === "waitlist" ? `名额不够，${name.trim()} 进了候补` : `已加上 ${name.trim()}`);
-    setName(""); setParty(1); setWechat(""); setIsNew(false); setBusy(false);
+    setName(""); setParty(1); setWechat(""); setIsNew(false); setReferrer(""); setBusy(false);
     onAdded();
   }
   return html`<form class="card stack-sm" onSubmit=${submit} novalidate>
@@ -1774,6 +1820,7 @@ function AddGuest({ e, onAdded }) {
     </div>
     <div class="field"><span class="label" id="g-party-l">人数</span><${Counter} id="g-party" value=${party} min=${1} max=${10} onChange=${setParty} labelledby="g-party-l" /></div>
     <label class="check" for="g-new"><input id="g-new" type="checkbox" checked=${isNew} onChange=${(x) => setIsNew(x.target.checked)} /><span>新朋友</span></label>
+    <div class="field"><label for="g-ref">介绍人 <span class="opt-tag">选填</span></label><input id="g-ref" class="in" maxlength="60" value=${referrer} onInput=${(x) => setReferrer(x.target.value)} placeholder="哪位校友的家属 / 谁带来的" /></div>
     <p class="hint">满了会自动进候补；要直接加进来，在候补名单里点「转为确认」。</p>
     <div class="row"><button class="btn btn-primary btn-sm" disabled=${busy}>${busy ? "添加中…" : "加进名单"}</button><button type="button" class="btn btn-ghost btn-sm" onClick=${() => setOpen(false)}>收起</button></div>
   </form>`;
@@ -1866,8 +1913,13 @@ function TeamEvent({ slug }) {
   const [d, setD] = useState(undefined);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [showGone, setShowGone] = useState(false);
+  const [known, setKnown] = useState({ names: new Set(), wechats: new Set() });
   const load = useCallback(async () => { try { setD(await api.team.event(slug)); } catch (x) { setD({ error: x }); } }, [slug]);
   useEffect(() => { load(); }, [load]);
+  // 别的活动里核实过的人（按微信号认，没留微信就按名字），这次就不用再问一遍
+  useEffect(() => {
+    api.team.verifiedPeople().then((list) => setKnown({ names: new Set(list.map((p) => normName(p.name))), wechats: new Set(list.filter((p) => p.wechat).map((p) => normName(p.wechat))) })).catch(() => {});
+  }, [d]);
   if (d === undefined) return html`<${Loading} />`;
   if (d === null) return html`<${NotFound} team />`;
   if (d.error) return html`<${ErrorBox} err=${d.error} />`;
@@ -1880,8 +1932,10 @@ function TeamEvent({ slug }) {
   const patch = async (p, msg) => { try { await api.team.patchEvent(e.id, p); } catch (x) { UI.toast(errText(x)); return; } if (msg) UI.toast(msg); setConfirmCancel(false); load(); };
   const STATUS = { published: ["已上线", "ok"], pending: ["待审核", "warn"], cancelled: ["已取消", ""], rejected: ["已退回", ""] };
   const [sl, stone] = STATUS[e.status] || ["", ""];
-  const list = (items) => html`<ul class="srows">${items.map((s) => html`<${SignupRow} key=${s.id} s=${s} e=${e} onChange=${load} />`)}</ul>`;
+  const isKnown = (s) => !s.verified && (s.wechat ? known.wechats.has(normName(s.wechat)) : known.names.has(normName(s.name)));
+  const list = (items) => html`<ul class="srows">${items.map((s) => html`<${SignupRow} key=${s.id} s=${s} e=${e} known=${isKnown(s)} onChange=${load} />`)}</ul>`;
   const toNotify = toNotifyOf(signups);
+  const toVerify = signups.filter((s) => s.status !== "cancelled" && s.is_new && !s.verified && !isKnown(s));
   return html`<div class="stack">
     <button class="back" onClick=${nav("#/team")}>← 核心团队</button>
     <header class="stack-xs">
@@ -1903,7 +1957,7 @@ function TeamEvent({ slug }) {
       <${Kpi} n=${st.attended} label="已签到（人）" />
     </div>
     ${e.status === "pending" && html`<div class="notice row between"><span>这场还在等审核。</span><span class="row">
-      <button class="btn btn-primary btn-sm" onClick=${() => patch({ status: "published" }, "已上线")}>通过并上线</button>
+      <button class="btn btn-primary btn-sm" onClick=${() => { const p = approvePatch(e); patch(p, p.join_code ? `已上线，报名口令 ${p.join_code}` : "已上线"); }}>通过并上线</button>
       <button class="btn btn-ghost btn-sm" onClick=${() => patch({ status: "rejected" }, "已退回")}>退回</button></span></div>`}
     ${e.status === "published" && html`<div class="row">
       ${!isPast(e) && html`<button class="btn btn-quiet btn-sm" onClick=${() => patch({ closed: !e.closed }, e.closed ? "重新开放报名" : "已截止报名")}>${e.closed ? "重新开放报名" : "截止报名"}</button>`}
@@ -1913,6 +1967,7 @@ function TeamEvent({ slug }) {
     </div>`}
     ${e.status === "published" && confirmCancel && html`<p class="hint" style="margin-top:-8px">取消后这场不会再出现在首页、预算和年度回顾里；报名的人打开链接会看到「已取消」。之后还能恢复。</p>`}
     ${e.status === "cancelled" && html`<div class="notice row between"><span>这场已取消，报名的人打开链接会看到提示。</span><button class="btn btn-quiet btn-sm" onClick=${() => patch({ status: "published" }, "已恢复")}>恢复</button></div>`}
+    ${toVerify.length > 0 && html`<div class="notice">有 ${toVerify.length} 位新朋友还没核实：${toVerify.map((s) => (s.referrer ? `${s.name}（介绍人：${s.referrer}）` : s.name)).join("、")}。可以找介绍人或对应的校友确认一下，确认后在名单里点「核实」。</div>`}
     ${toNotify.length > 0 && html`<div class="notice warn-card">有 ${toNotify.length} 组刚从候补补上：${toNotify.map((s) => s.name).join("、")}。系统不会自动通知他们，在下面名单里点「复制通知」，发到微信。</div>`}
     <section><h2 class="sub">名单 · ${going.length} 组 ${st.going} 人</h2>${going.length ? list(going) : html`<p class="small muted">还没有人报名。</p>`}</section>
     ${waiting.length > 0 && html`<section><h2 class="sub">候补 · ${waiting.length} 组 ${st.waiting} 人</h2>${list(waiting)}<p class="hint">有人取消或调高人数上限时，系统会按顺序自动补上。</p></section>`}
