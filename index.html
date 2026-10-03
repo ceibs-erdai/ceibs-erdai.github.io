@@ -1574,7 +1574,7 @@ function EventForm({ mode, initial, settings, onDone }) {
       <p class="hint">不填的话，「地图」按钮会按地点搜索。</p></div>
     <div class="field"><label for="f-cap">人数上限</label>
       <input id="f-cap" class="in" type="number" inputmode="numeric" min="1" max="500" value=${f.capacity} onInput=${set("capacity")} placeholder="不限" />
-      <p class="hint">留空就是不限。每个人自己报名，不能带人。</p></div>
+      <p class="hint">留空就是不限。每个人自己报名。</p></div>
     <label class="check" for="f-wait"><input id="f-wait" type="checkbox" checked=${f.waitlist} onChange=${set("waitlist")} />
       <span>满了以后开放候补<span class="hint block">有人取消时，系统按报名顺序自动补上。</span></span></label>
     <div class="field"><label for="f-cost">费用 <span class="opt-tag">选填</span></label>
