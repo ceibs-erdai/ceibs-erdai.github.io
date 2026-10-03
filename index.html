@@ -489,6 +489,7 @@ function untilLabel(e) {
 }
 function statusPill(e, mine) {
   if (e.status === "cancelled") return ["已取消", ""];
+  if (e.status === "pending") return ["待审核", "warn"];
   if (mine) return mine.status === "waitlist" ? [`候补第 ${mine.position} 位`, "warn"] : ["已报名", "mine"];
   if (isPast(e)) return ["已结束", ""];
   if (hasStarted(e)) return ["进行中", "hot"];
@@ -762,6 +763,8 @@ function liveApi() {
   return {
     mode: "live",
     listEvents: async () => (await rpc("list_events")) || [],
+    // 数据库还没升到 v5 时没有这个函数，当作没有待审核的
+    listPending: async () => { try { return (await rpc("list_pending")) || []; } catch { return []; } },
     getEvent: (slug) => rpc("get_event", { p_slug: slug }),
     join(slug, f) {
       const args = { p_slug: slug, p_name: f.name, p_party: f.party, p_is_new: !!f.isNew, p_note: f.note || null };
@@ -864,7 +867,8 @@ function demoApi() {
   return {
     mode: "demo",
     async listEvents() { await wait(); return db.events.filter((e) => e.status === "published").sort(byStart).map(pub); },
-    async getEvent(slug) { await wait(); const e = db.events.find((x) => x.slug === slug && (x.status === "published" || x.status === "cancelled")); return e ? pub(e) : null; },
+    async listPending() { await wait(); return db.events.filter((e) => e.status === "pending" && Date.parse(e.starts_at) > Date.now()).sort(byStart).map(pub); },
+    async getEvent(slug) { await wait(); const e = db.events.find((x) => x.slug === slug && ["published", "cancelled", "pending"].includes(x.status)); return e ? pub(e) : null; },
     async join(slug, f) {
       await wait();
       const e = db.events.find((x) => x.slug === slug && x.status === "published");
@@ -1151,7 +1155,7 @@ function Hero({ e, mine }) {
 }
 function EventCard({ e, mine, past }) {
   const [label, tone] = statusPill(e, mine);
-  const count = past ? (e.actual_count != null ? `实到 ${e.actual_count} 人` : `报名 ${e.going} 人`) : e.capacity != null ? `${e.going}/${e.capacity} 人` : `${e.going} 人`;
+  const count = e.status === "pending" ? "审核后开放报名" : past ? (e.actual_count != null ? `实到 ${e.actual_count} 人` : `报名 ${e.going} 人`) : e.capacity != null ? `${e.going}/${e.capacity} 人` : `${e.going} 人`;
   return html`<a class=${"ecard" + (past ? " is-past" : "")} href=${"#/e/" + e.slug} onClick=${nav("#/e/" + e.slug)}>
     <${DateTile} iso=${e.starts_at} />
     <div class="ec-main">
@@ -1207,6 +1211,7 @@ function Home() {
   const [err, setErr] = useState(null);
   const [mine, setMine] = useState({});
   const [props, setProps] = useState([]);
+  const [pending, setPending] = useState([]);
   const [q, setQ] = useState("");
   const [cat, setCat] = useState(() => store.get("erdai:cat", "all"));
   const [showPast, setShowPast] = useState(false);
@@ -1222,6 +1227,7 @@ function Home() {
       if (alive) setMine(out);
     }).catch((x) => { if (alive) setErr(x); });
     loadMyProps().then((l) => { if (alive) setProps(l); }).catch(() => {});
+    api.listPending().then((l) => { if (alive) setPending(l); }).catch(() => {});
     return () => { alive = false; };
   }, []);
   const pickCat = (k) => { setCat(k); store.set("erdai:cat", k); };
@@ -1259,6 +1265,11 @@ function Home() {
       <div class="section-title"><h2 class="h-sec">${filtering ? "找到的活动" : "之后的活动"}</h2><span class="tiny muted">${list.length} 场</span></div>
       ${list.length ? html`<div class="elist">${list.map((e) => html`<${EventCard} key=${e.id} e=${e} mine=${mine[e.id]} />`)}</div>`
         : html`<p class="empty">没有符合的活动。<button class="linkish" onClick=${() => { setQ(""); pickCat("all"); }}>看全部</button></p>`}
+    </section>`}
+    ${pending.length > 0 && html`<section>
+      <div class="section-title"><h2 class="h-sec">待审核的活动</h2><span class="tiny muted">${pending.length} 场</span></div>
+      <p class="small muted" style="margin:-4px 0 10px">大家提交的、核心团队还没审核的活动。可以先看看，审核通过后才能报名。</p>
+      <div class="elist">${pending.map((e) => html`<${EventCard} key=${e.id} e=${e} />`)}</div>
     </section>`}
     ${pastList.length > 0 && html`<section>
       <button class="past-toggle" aria-expanded=${showPast} onClick=${() => setShowPast(!showPast)}><span>已结束 · ${pastList.length} 场</span><span>${showPast ? "收起" : "展开"}</span></button>
@@ -1423,8 +1434,15 @@ function EventPage({ slug }) {
   if (e === undefined) return html`<${Loading} />`;
   if (e === null) return html`<${NotFound} />`;
   const cancelled = e.status === "cancelled";
+  const pending = e.status === "pending";
+  const myProp = pending ? MyProps.bySlug(e.slug) : null;
   let action;
   if (cancelled) action = html`<div class="notice">这场活动取消了。${mine ? "你之前报了名，不用再做什么。" : ""}</div>`;
+  else if (pending) action = html`<div class="notice warn-card stack-xs">
+    <p><strong>这场还在等核心团队审核</strong>，审核通过后才能报名。</p>
+    <p class="small">内容是发起人自己写的，核心团队还没看过。涉及付钱的事，等审核通过后，以活动页写明的收款人为准。</p>
+    ${myProp && html`<a class="btn btn-quiet btn-sm" style="justify-self:start" href=${"#/new/" + e.slug} onClick=${nav("#/new/" + e.slug)}>修改或撤回你的申请</a>`}
+  </div>`;
   else if (hasStarted(e)) action = html`<div class="notice">${isPast(e) ? `活动已经结束了${e.actual_count != null ? `，实到 ${e.actual_count} 人` : ""}。` : "活动已经开始，报名关闭了。"}${mine ? (mine.status === "waitlist" ? "你当时在候补名单上。" : "你报了名。") : ""}</div>`;
   else if (mine) action = html`<${MyStatus} e=${e} s=${mine} onChanged=${load} />`;
   else if (joinable(e)) action = html`<${JoinForm} e=${e} onJoined=${load} />`;
@@ -1433,17 +1451,17 @@ function EventPage({ slug }) {
     <button class="back" onClick=${nav("#/")}>← 全部活动</button>
     <${Cover} e=${e} />
     <header class="ev-head">
-      <p class="ev-when">${fmtWhen(e)}<span class="ev-until">${cancelled ? "已取消" : untilLabel(e)}</span></p>
+      <p class="ev-when">${fmtWhen(e)}<span class="ev-until">${cancelled ? "已取消" : pending ? "待审核" : untilLabel(e)}</span></p>
       <h1 class="ev-title">${e.title}</h1>
       <div class="row"><${CatChips} cats=${e.categories} /></div>
     </header>
-    ${!cancelled && html`<${CountBlock} e=${e} />`}
+    ${!cancelled && !pending && html`<${CountBlock} e=${e} />`}
     <${Facts} e=${e} />
     ${e.description && html`<${RichText} text=${e.description} />`}
     ${!cancelled && !isPast(e) && html`<${SafetyNote} />`}
     ${action}
-    ${!cancelled && html`<${WhoGoing} e=${e} />`}
-    ${!cancelled && !isPast(e) && html`<${ShareRow} e=${e} />`}
+    ${!cancelled && !pending && html`<${WhoGoing} e=${e} />`}
+    ${!cancelled && !pending && !isPast(e) && html`<${ShareRow} e=${e} />`}
   </article>`;
 }
 
@@ -1591,7 +1609,7 @@ function Propose({ slug }) {
   if (done) return html`<section class="stack">
     <span class="stamp big">收到</span>
     <h1 class="h-page">提交好了</h1>
-    <p class="muted">核心团队看过后就会上线，通常一两天内。上线后首页就能看到。</p>
+    <p class="muted">大家现在就能在首页「待审核的活动」里看到它。核心团队审核通过后开放报名，通常一两天内。</p>
     <p class="small muted">审核进度在首页「你提交的活动」里。审核前发现写错了，点开就能改，也可以撤回，不用重新提交。换了手机就看不到，找核心团队。</p>
     <p class="small muted">着急的话，在群里找 ${CONFIG.team.join("、")}。</p>
     <a class="btn btn-quiet" style="justify-self:start" href="#/" onClick=${nav("#/")}>回到首页</a>
@@ -1603,7 +1621,7 @@ function Propose({ slug }) {
   return html`<div class="stack">
     <button class="back" onClick=${nav("#/")}>← 全部活动</button>
     <div class="stack-xs"><h1 class="h-page">发起一场活动</h1>
-      <p class="small muted">填完提交给核心团队，审核通过后自动出现在首页。需要校友会经费的话，在最后的留言里写预计花费。</p></div>
+      <p class="small muted">提交以后，大家在首页「待审核的活动」里就能看到（只能看，不能报名），核心团队审核通过后开放报名。「给核心团队的话」只有核心团队看得到。需要校友会经费的话，写在那里。</p></div>
     <${EventForm} mode="propose" onDone=${onDone} />
   </div>`;
 }
@@ -1671,6 +1689,7 @@ function Help() {
     <section class="card stack"><h2 class="h-sec">自己组织</h2>
       <${QA} q="我也想组织一场">点右上角「发起活动」，写清楚时间、地点、人数。核心团队看过后就会上线，一般一两天内。<//>
       <${QA} q="需要经费？">在「给核心团队的话」里写预计花费。校友会每年有一笔活动经费，金额较大的话核心团队会先和理事会沟通。<//>
+      <${QA} q="没审核的活动别人看得到吗？">看得到。首页「待审核的活动」里所有人都能看，但审核通过前不能报名。「给核心团队的话」只有核心团队看得到。<//>
       <${QA} q="提交以后发现写错了？">首页「你提交的活动」里能看到审核进度。审核前点开就能修改，也可以撤回，不用重新提交。换了手机就看不到，找核心团队。<//>
     </section>
     <section class="card stack"><h2 class="h-sec">安全须知</h2>
