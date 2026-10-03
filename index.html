@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>CEIBS二代聚会</title>
-<meta name="description" content="CEIBS校友会二代在多伦多的活动报名板：聚餐、户外、运动、新人欢迎、职业交流。点一下就能报名，不用注册。">
+<meta name="description" content="CEIBS校友会二代在多伦多的活动报名板，从聚餐、户外运动到新人欢迎和职业交流都有。点一下就能报名，不用注册。">
 <meta property="og:type" content="website">
 <meta property="og:title" content="CEIBS二代聚会">
 <meta property="og:description" content="CEIBS校友会二代在多伦多的活动报名板。点一下就能报名，不用注册。">
@@ -281,7 +281,7 @@ fieldset.team-only legend { padding: 0 6px; font-size: 12.5px; font-weight: 700;
 .face { display: grid; place-items: center; width: 34px; height: 34px; margin-left: -6px; border-radius: 50%; border: 2px solid var(--paper); color: #fff; font: 700 13px/1 var(--f-body); }
 .face.more { background: var(--tile); color: var(--muted); font-size: 12px; }
 
-/* 核心团队 */
+/* Core Team */
 .teambar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 6px 6px 12px; border-radius: var(--r-md); background: var(--tile); }
 .tabs { display: flex; gap: 4px; padding: 4px; border-radius: var(--r-md); background: var(--tile); }
 .tabs button { flex: 1; min-height: 38px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-weight: 700; font-size: 14px; }
@@ -386,11 +386,11 @@ const CONFIG = {
   name: "CEIBS二代聚会",               // 网站名：浏览器标签、群公告、年度回顾里用
   org: "CEIBS校友会",                  // 页面顶部和介绍里显示的校友会名称
   city: "多伦多",
-  team: ["Ellesse", "Harry", "Chen"],  // 页脚显示的核心团队
+  team: ["Ellesse", "Harry", "Chen"],  // 页脚显示的 Core Team
   contact: "",                         // 出问题找谁，比如「微信 harry_xx」；留空就不显示
   yearTarget: [6, 10],                 // 理事会建议每年 6–10 场
-  // 每场活动页和群公告都会带上这段提醒（会长要求每次都说明）。{team} 会换成上面的核心团队名单
-  safety: "Trust everyone, but verify everything。认识新朋友时多留个心眼；凡是涉及转账、借钱、代购、投资理财的事，先找核心团队（{team}）核实对方身份。活动费用只付给活动页写明的收款人。",
+  // 每场活动页和群公告都会带上这段提醒（会长要求每次都说明）。{team} 会换成上面的 Core Team 名单
+  safety: "Trust everyone, but verify everything。认识新朋友时多留个心眼；凡是涉及转账和借钱，或者代购、投资理财的事，先找 Core Team（{team}）核实对方身份。活动费用只付给活动页写明的收款人。",
 };
 /* ==================================================================== */
 
@@ -535,15 +535,15 @@ const ERR = {
   party_size: "人数超出了这场允许的范围。",
   duplicate: "这个名字已经报过名了。如果是同名的另一个人，加个姓或字母区分一下。",
   full: "名额刚刚满了，这场不开放候补。",
-  too_many_pending: "待审核的活动太多了，请直接在群里联系核心团队。",
+  too_many_pending: "待审核的活动太多了，请直接在群里联系 Core Team。",
   invalid: "有些内容格式不对，检查一下时间和数字再提交。",
-  not_team: "这个账号不在核心团队名单里。",
+  not_team: "这个账号不在 Core Team 名单里。",
   too_big: "文件太大了。演示版每张收据最多约 1 MB，正式版没有这个限制。",
   bad_image: "这张图打不开，换成 JPG 或 PNG 再试。",
   network: "网络好像断了，检查一下再试。",
   bad_code: "报名口令不对。口令一般在群公告里，也可以问组织者。",
   referrer_required: "第一次来的朋友，请写一下你是哪位校友的家属，或者谁带你来的。",
-  not_pending: "这个申请已经审核过了，要改的话找核心团队。",
+  not_pending: "这个申请已经审核过了，要改的话找 Core Team。",
 };
 function errText(x) {
   const msg = String((x && x.message) || x || "");
@@ -552,7 +552,7 @@ function errText(x) {
   if (ERR[code]) return ERR[code];
   if (["23514", "22P02", "22007", "22008", "22003"].includes(code)) return ERR.invalid;
   if (/fetch|network|load failed/i.test(msg)) return ERR.network;
-  return `出了点问题（${msg.slice(0, 80) || "未知错误"}）。刷新再试一次，还不行就联系核心团队。`;
+  return `出了点问题（${msg.slice(0, 80) || "未知错误"}）。刷新再试一次，还不行就联系 Core Team。`;
 }
 
 /* ------------------------------------------------------- 这台手机记住的 */
@@ -897,7 +897,7 @@ function demoApi() {
     async submitEvent(p) {
       await wait();
       if (db.events.filter((e) => e.status === "pending").length >= 30) fail("too_many_pending");
-      // 收款人只能由核心团队定，群友填的不收
+      // 收款人只能由 Core Team 定，群友填的不收
       const { payee, ...rest } = clone(p);
       const e = { ...clone(EVENT_DEFAULTS), ...rest, id: uid(), slug: makeSlug(p.starts_at), status: "pending", edit_token: uid(), created_at: new Date().toISOString() };
       db.events.push(e); save(); return { slug: e.slug, token: e.edit_token };
@@ -992,7 +992,7 @@ function demoSeed() {
    ==================================================================== */
 
 let api = null;
-let TEAM_SESSION;  // 核心团队登录状态，在团队页面之间共用
+let TEAM_SESSION;  // Core Team 登录状态，在团队页面之间共用
 const UI = { toast() {}, manual() {}, lightbox() {}, refresh() {} };
 
 /* ---------------------------------------------------------- 小部件 */
@@ -1005,7 +1005,7 @@ function NotFound({ team }) {
   return html`<div class="stack">
     <h1 class="h-page">找不到这个活动</h1>
     <p class="muted">可能还没审核、已经下线，或者链接复制得不完整。</p>
-    <a class="btn btn-quiet" style="justify-self:start" href=${team ? "#/team" : "#/"} onClick=${nav(team ? "#/team" : "#/")}>${team ? "回核心团队" : "看全部活动"}</a>
+    <a class="btn btn-quiet" style="justify-self:start" href=${team ? "#/team" : "#/"} onClick=${nav(team ? "#/team" : "#/")}>${team ? "回 Core Team" : "看全部活动"}</a>
   </div>`;
 }
 class Boundary extends Component {
@@ -1014,7 +1014,7 @@ class Boundary extends Component {
   render() {
     if (!this.state.err) return this.props.children;
     return html`<div class="notice err-box" role="alert">
-      <p>这一页出错了，不是你的操作问题。把下面这行发给核心团队能帮我们修：</p>
+      <p>这一页出错了，不是你的操作问题。把下面这行发给 Core Team 能帮我们修：</p>
       <p class="tiny muted">${String((this.state.err && this.state.err.message) || this.state.err)}</p>
       <button class="btn btn-quiet btn-sm" onClick=${() => { this.setState({ err: null }); go("#/"); }}>回首页</button>
     </div>`;
@@ -1117,14 +1117,14 @@ function Masthead({ team }) {
       <span class="seal" aria-hidden="true">二代</span>
       <span class="grow"><span class="brand-name">聚会</span><span class="brand-sub">${CONFIG.org} · ${CONFIG.city}</span></span>
     </a>
-    ${team ? html`<span class="mast-tag">核心团队</span>` : html`<a class="btn btn-quiet btn-sm" href="#/new" onClick=${nav("#/new")}>发起活动</a>`}
+    ${team ? html`<span class="mast-tag">Core Team</span>` : html`<a class="btn btn-quiet btn-sm" href="#/new" onClick=${nav("#/new")}>发起活动</a>`}
   </header>`;
 }
 function Footer() {
   return html`<footer class="foot">
-    <p>核心团队 · ${CONFIG.team.join(" · ")}</p>
+    <p>Core Team · ${CONFIG.team.join(" · ")}</p>
     ${CONFIG.contact && html`<p>有问题找：${CONFIG.contact}</p>`}
-    <p class="foot-links"><a href="#/help" onClick=${nav("#/help")}>怎么用</a><a href="#/team" onClick=${nav("#/team")}>核心团队入口</a></p>
+    <p class="foot-links"><a href="#/help" onClick=${nav("#/help")}>怎么用</a><a href="#/team" onClick=${nav("#/team")}>Core Team 入口</a></p>
   </footer>`;
 }
 function DemoBanner() {
@@ -1188,7 +1188,7 @@ function PropsStrip({ list }) {
       if (x.status === "published") return html`<li key=${x.token}><a href=${"#/e/" + x.slug} onClick=${nav("#/e/" + x.slug)}>${inner}</a></li>`;
       return html`<li key=${x.token}><span class="ms-row">${inner}</span></li>`;
     })}</ul>
-    <p class="tiny muted">审核前点开可以修改或撤回。没通过的话，有疑问找核心团队。</p>
+    <p class="tiny muted">审核前点开可以修改或撤回。没通过的话，有疑问找 Core Team。</p>
   </section>`;
 }
 // 只显示还没开始的；撤回了、过期了、数据库里找不到的就从这台手机上清掉
@@ -1202,7 +1202,7 @@ async function loadMyProps() {
 }
 function ProposeCTA() {
   return html`<aside class="cta">
-    <div><h2 class="h-sec">想自己组织一场？</h2><p class="small muted">爬山、打球、探店、分享会都行。写清楚时间地点，核心团队看过后就会上线。</p></div>
+    <div><h2 class="h-sec">想自己组织一场？</h2><p class="small muted">爬山打球、探店都行，分享会也行。写清楚时间地点，Core Team 看过后就会上线。</p></div>
     <a class="btn btn-quiet" href="#/new" onClick=${nav("#/new")}>发起活动</a>
   </aside>`;
 }
@@ -1251,11 +1251,11 @@ function Home() {
       <h1 class="h-page">最近的活动</h1>
       <p class="small muted">${CONFIG.org}二代在${CONFIG.city}的聚会。点开一场，写上名字就算报名，不用注册。</p>
     </section>
-    ${next ? html`<${Hero} e=${next} mine=${mine[next.id]} />` : html`<div class="empty">还没有排期的活动。核心团队发布后会出现在这里，你也可以先发起一场。</div>`}
+    ${next ? html`<${Hero} e=${next} mine=${mine[next.id]} />` : html`<div class="empty">还没有排期的活动。Core Team 发布后会出现在这里，你也可以先发起一场。</div>`}
     ${mineList.length > 0 && html`<${MineStrip} list=${mineList} mine=${mine} />`}
     ${props.length > 0 && html`<${PropsStrip} list=${props} />`}
     ${events.length > 0 && html`<div class="tools">
-      <input id="q" class="in" type="search" placeholder="搜活动、地点、组织者" value=${q} onInput=${(x) => setQ(x.target.value)} aria-label="搜索活动" />
+      <input id="q" class="in" type="search" placeholder="搜活动、地点或组织者" value=${q} onInput=${(x) => setQ(x.target.value)} aria-label="搜索活动" />
       <div class="chips" role="toolbar" aria-label="按类型筛选">
         <button class=${"fchip" + (cat === "all" ? " on" : "")} aria-pressed=${cat === "all"} onClick=${() => pickCat("all")}>全部 <span class="n">${upcoming.length}</span></button>
         ${CATS.map((c) => html`<button key=${c.key} class=${"fchip cat-" + c.key + (cat === c.key ? " on" : counts[c.key] ? "" : " dim")} aria-pressed=${cat === c.key} onClick=${() => pickCat(c.key)}><${MiniSeal} c=${c} />${c.label}<span class="n">${counts[c.key]}</span></button>`)}
@@ -1268,7 +1268,7 @@ function Home() {
     </section>`}
     ${pending.length > 0 && html`<section>
       <div class="section-title"><h2 class="h-sec">待审核的活动</h2><span class="tiny muted">${pending.length} 场</span></div>
-      <p class="small muted" style="margin:-4px 0 10px">大家提交的、核心团队还没审核的活动。可以先看看，审核通过后才能报名。</p>
+      <p class="small muted" style="margin:-4px 0 10px">这些活动是大家提交的，Core Team 还没审核。可以先看看，审核通过后才能报名。</p>
       <div class="elist">${pending.map((e) => html`<${EventCard} key=${e.id} e=${e} />`)}</div>
     </section>`}
     ${pastList.length > 0 && html`<section>
@@ -1293,8 +1293,8 @@ function Facts({ e }) {
     <dt>时间</dt><dd>${fmtWhen(e)}</dd>
     <dt>地点</dt><dd>${e.location} <a class="link" href=${mapUrl(e)} target="_blank" rel="noopener">地图</a></dd>
     ${e.cost_note ? html`<dt>费用</dt><dd>${e.cost_note}${friendCost(e) ? html`<span class="hint block">${FRIEND_COST}。</span>` : null}</dd>` : null}
-    ${e.payee ? html`<dt>收款人</dt><dd><strong>${e.payee}</strong><span class="hint block">活动费用只付给这个人。其他人以活动名义找你要钱，先问核心团队。</span></dd>` : null}
-    <dt>组织</dt><dd>${e.host_name || "核心团队"}${e.host_contact ? html`<span class="muted"> · ${e.host_contact}</span>` : null}</dd>
+    ${e.payee ? html`<dt>收款人</dt><dd><strong>${e.payee}</strong><span class="hint block">活动费用只付给这个人。其他人以活动名义找你要钱，先问 Core Team。</span></dd>` : null}
+    <dt>组织</dt><dd>${e.host_name || "Core Team"}${e.host_contact ? html`<span class="muted"> · ${e.host_contact}</span>` : null}</dd>
   </dl>`;
 }
 function WhoGoing({ e }) {
@@ -1361,7 +1361,7 @@ function JoinForm({ e, onJoined }) {
       <span>我是第一次参加 / 刚到${CONFIG.city}<span class="hint block">组织者会特别招呼一下新朋友。</span></span></label>
     ${isNew && html`<div class="field"><label for="j-ref">你是哪位校友的家属，或者谁带你来的？${refRequired ? html`<${Req} />` : html` <span class="opt-tag">选填</span>`}</label>
       <input id="j-ref" class="in" required=${refRequired} value=${referrer} onInput=${(x) => setReferrer(x.target.value)} maxlength="60" placeholder="比如：XX 级 XX 校友的女儿 / Amy 带我来的" />
-      <p class="hint">方便组织者认识你、确认身份。只有核心团队看得到。</p></div>`}
+      <p class="hint">方便组织者认识你、确认身份。只有 Core Team 看得到。</p></div>`}
     <div class="field"><label for="j-note">想跟组织者说的 <span class="opt-tag">选填</span></label>
       <textarea id="j-note" class="in" rows="2" maxlength="300" value=${note} onInput=${(x) => setNote(x.target.value)} placeholder="比如忌口、会晚到"></textarea></div>
     ${err && html`<p class="err" role="alert">${err}</p>`}
@@ -1439,8 +1439,8 @@ function EventPage({ slug }) {
   let action;
   if (cancelled) action = html`<div class="notice">这场活动取消了。${mine ? "你之前报了名，不用再做什么。" : ""}</div>`;
   else if (pending) action = html`<div class="notice warn-card stack-xs">
-    <p><strong>这场还在等核心团队审核</strong>，审核通过后才能报名。</p>
-    <p class="small">内容是发起人自己写的，核心团队还没看过。涉及付钱的事，等审核通过后，以活动页写明的收款人为准。</p>
+    <p><strong>这场还在等 Core Team 审核</strong>，审核通过后才能报名。</p>
+    <p class="small">内容是发起人自己写的，Core Team 还没看过。涉及付钱的事，等审核通过后，以活动页写明的收款人为准。</p>
     ${myProp && html`<a class="btn btn-quiet btn-sm" style="justify-self:start" href=${"#/new/" + e.slug} onClick=${nav("#/new/" + e.slug)}>修改或撤回你的申请</a>`}
   </div>`;
   else if (hasStarted(e)) action = html`<div class="notice">${isPast(e) ? `活动已经结束了${e.actual_count != null ? `，实到 ${e.actual_count} 人` : ""}。` : "活动已经开始，报名关闭了。"}${mine ? (mine.status === "waitlist" ? "你当时在候补名单上。" : "你报了名。") : ""}</div>`;
@@ -1576,15 +1576,15 @@ function EventForm({ mode, initial, settings, onDone }) {
       <input id="f-payee" class="in" maxlength="80" value=${f.payee} onInput=${set("payee")} placeholder="比如：Harry · e-Transfer" />
       <p class="hint">活动页会写明「费用只付给这个人」，防止有人冒充组织者收钱。</p></div>`}
     <div class="field"><label for="f-desc">介绍</label>
-      <textarea id="f-desc" class="in" rows="7" maxlength="5000" value=${f.description} onInput=${set("description")} placeholder="做什么、要带什么、几点到……"></textarea>
+      <textarea id="f-desc" class="in" rows="7" maxlength="5000" value=${f.description} onInput=${set("description")} placeholder="做什么、要带什么，还有几点到……"></textarea>
       <p class="hint">*两边加星号* 会加粗，「- 」开头的行会变成列表，链接自动可点。${f.description.length} / 5000</p></div>
     <div class="grid2">
       <div class="field"><label for="f-host">组织者<${Req} /></label><input id="f-host" class="in" required maxlength="60" value=${f.host_name} onInput=${set("host_name")} /></div>
       <div class="field"><label for="f-contact">联系方式 <span class="opt-tag">会公开</span></label><input id="f-contact" class="in" maxlength="120" value=${f.host_contact} onInput=${set("host_contact")} placeholder="微信号，或「群里 @我」" /></div>
     </div>
-    ${propose && html`<div class="field"><label for="f-pnote">给核心团队的话 <span class="opt-tag">不公开</span></label>
-      <textarea id="f-pnote" class="in" rows="3" maxlength="500" value=${f.proposer_note} onInput=${set("proposer_note")} placeholder="需要校友会经费吗？大概多少？核心团队怎么联系你？"></textarea></div>`}
-    ${team && html`<fieldset class="team-only"><legend>核心团队填写</legend>
+    ${propose && html`<div class="field"><label for="f-pnote">给 Core Team 的话 <span class="opt-tag">不公开</span></label>
+      <textarea id="f-pnote" class="in" rows="3" maxlength="500" value=${f.proposer_note} onInput=${set("proposer_note")} placeholder="需要校友会经费吗？大概多少？Core Team 怎么联系你？"></textarea></div>`}
+    ${team && html`<fieldset class="team-only"><legend>Core Team 填写</legend>
       <div class="field"><span class="label">封面 <span class="opt-tag">选填</span></span>
         <${Cover} e=${{ categories: f.categories, cover_url: f.cover_url }} />
         <div class="row"><label class="btn btn-quiet btn-sm">${coverBusy ? "上传中…" : f.cover_url ? "换一张" : "上传照片"}<input class="vh" type="file" accept="image/*" onChange=${onCover} /></label>
@@ -1600,7 +1600,7 @@ function EventForm({ mode, initial, settings, onDone }) {
         <span>已经和理事会沟通过<span class="hint block">单场达到 ${money(settings.big_amount)} 算较大金额，按约定要提前沟通。</span></span></label>`}
     </fieldset>`}
     ${err && html`<p class="err" role="alert">${err}</p>`}
-    <div class="row"><button class="btn btn-primary" type="submit" disabled=${busy}>${busy ? "提交中…" : mode === "propose" ? "提交给核心团队" : mode === "propose-edit" ? "保存修改" : mode === "team-new" ? "发布" : "保存"}</button></div>
+    <div class="row"><button class="btn btn-primary" type="submit" disabled=${busy}>${busy ? "提交中…" : mode === "propose" ? "提交给 Core Team" : mode === "propose-edit" ? "保存修改" : mode === "team-new" ? "发布" : "保存"}</button></div>
   </form>`;
 }
 function Propose({ slug }) {
@@ -1609,8 +1609,8 @@ function Propose({ slug }) {
   if (done) return html`<section class="stack">
     <span class="stamp big">收到</span>
     <h1 class="h-page">提交好了</h1>
-    <p class="muted">大家现在就能在首页「待审核的活动」里看到它。核心团队审核通过后开放报名，通常一两天内。</p>
-    <p class="small muted">审核进度在首页「你提交的活动」里。审核前发现写错了，点开就能改，也可以撤回，不用重新提交。换了手机就看不到，找核心团队。</p>
+    <p class="muted">大家现在就能在首页「待审核的活动」里看到它。Core Team 审核通过后开放报名，通常一两天内。</p>
+    <p class="small muted">审核进度在首页「你提交的活动」里。审核前发现写错了，点开就能改，也可以撤回，不用重新提交。换了手机就看不到，找 Core Team。</p>
     <p class="small muted">着急的话，在群里找 ${CONFIG.team.join("、")}。</p>
     <a class="btn btn-quiet" style="justify-self:start" href="#/" onClick=${nav("#/")}>回到首页</a>
   </section>`;
@@ -1621,7 +1621,7 @@ function Propose({ slug }) {
   return html`<div class="stack">
     <button class="back" onClick=${nav("#/")}>← 全部活动</button>
     <div class="stack-xs"><h1 class="h-page">发起一场活动</h1>
-      <p class="small muted">提交以后，大家在首页「待审核的活动」里就能看到（只能看，不能报名），核心团队审核通过后开放报名。「给核心团队的话」只有核心团队看得到。需要校友会经费的话，写在那里。</p></div>
+      <p class="small muted">提交以后，大家在首页「待审核的活动」里就能看到（只能看，不能报名），Core Team 审核通过后开放报名。「给 Core Team 的话」只有 Core Team 看得到。需要校友会经费的话，写在那里。</p></div>
     <${EventForm} mode="propose" onDone=${onDone} />
   </div>`;
 }
@@ -1637,12 +1637,12 @@ function ProposalEdit({ slug }) {
   const back = html`<button class="back" onClick=${nav("#/")}>← 全部活动</button>`;
   if (d === undefined) return html`<${Loading} />`;
   if (d && d.error) return html`<${ErrorBox} err=${d.error} />`;
-  if (!d) return html`<div class="stack">${back}<div class="notice">在这台手机上找不到这个申请，可能已经撤回了，或者是在别的手机上提交的。要改的话找核心团队（${CONFIG.team.join("、")}）。</div></div>`;
+  if (!d) return html`<div class="stack">${back}<div class="notice">在这台手机上找不到这个申请，可能已经撤回了，或者是在别的手机上提交的。要改的话找 Core Team（${CONFIG.team.join("、")}）。</div></div>`;
   if (d.status !== "pending") return html`<div class="stack">${back}
     <h1 class="h-page">${d.title}</h1>
     ${d.status === "published"
-      ? html`<div class="notice">已经审核通过上线了。要改内容找核心团队（${CONFIG.team.join("、")}）。</div><a class="btn btn-quiet" style="justify-self:start" href=${"#/e/" + d.slug} onClick=${nav("#/e/" + d.slug)}>看活动页</a>`
-      : html`<div class="notice">这个申请没通过。有疑问找核心团队（${CONFIG.team.join("、")}）。</div>`}
+      ? html`<div class="notice">已经审核通过上线了。要改内容找 Core Team（${CONFIG.team.join("、")}）。</div><a class="btn btn-quiet" style="justify-self:start" href=${"#/e/" + d.slug} onClick=${nav("#/e/" + d.slug)}>看活动页</a>`
+      : html`<div class="notice">这个申请没通过。有疑问找 Core Team（${CONFIG.team.join("、")}）。</div>`}
   </div>`;
   async function withdraw() {
     setBusy(true);
@@ -1653,11 +1653,11 @@ function ProposalEdit({ slug }) {
   return html`<div class="stack">
     ${back}
     <div class="stack-xs"><h1 class="h-page">修改你的申请</h1>
-      <p class="small muted">还在等核心团队审核，现在改了他们看到的就是新内容。</p></div>
+      <p class="small muted">还在等 Core Team 审核，现在改了他们看到的就是新内容。</p></div>
     <${EventForm} mode="propose-edit" initial=${d} onDone=${() => go("#/")} />
     <section class="card stack-sm">
       <h2 class="h-sec">不办了？</h2>
-      <p class="small muted">撤回以后核心团队就不会再审核这个申请了。</p>
+      <p class="small muted">撤回以后 Core Team 就不会再审核这个申请了。</p>
       ${confirm
         ? html`<div class="row"><button class="btn btn-danger btn-sm" disabled=${busy} onClick=${withdraw}>确认撤回</button><button class="btn btn-ghost btn-sm" onClick=${() => setConfirm(false)}>算了</button></div>`
         : html`<button class="btn btn-ghost btn-sm" style="justify-self:start" onClick=${() => setConfirm(true)}>撤回申请</button>`}
@@ -1672,7 +1672,7 @@ function Help() {
   return html`<div class="stack">
     <button class="back" onClick=${nav("#/")}>← 全部活动</button>
     <div class="stack-xs"><h1 class="h-page">怎么用</h1>
-      <p class="muted">${CONFIG.org}二代在${CONFIG.city}的活动报名板：聚餐、户外、运动、新人欢迎、职业交流都在这里报名。</p></div>
+      <p class="muted">${CONFIG.org}二代在${CONFIG.city}的活动报名板。从聚餐、户外运动到新人欢迎和职业交流，都在这里报名。</p></div>
     <section class="card stack"><h2 class="h-sec">报名</h2>
       <${QA} q="要注册吗？">不用。点开活动，写上名字、选好人数，点「报名」就行。这台手机会记住你，下次名字自动填好。<//>
       <${QA} q="带朋友一起来？">名额按人头算：你加两个朋友就选 3，每场最多带几位看活动页。报名后人数不能改，要改得先取消再重报。带来的朋友原则上自付费用，具体看每场的费用说明。<//>
@@ -1680,32 +1680,32 @@ function Help() {
       <${QA} q="怎么取消？">用报名时的那台手机打开活动，点「我去不了了」。换了手机的话，找组织者帮你取消。<//>
       <${QA} q="在微信里打开可以吗？">可以。报名记录存在你打开它的地方：在微信里报的名，以后也在微信里打开同一个链接查看或取消。想加到手机日历，点右上角「···」选「在浏览器打开」。<//>
       <${QA} q="有的活动要口令？">为了防止链接被转出去后有外人乱报，有的活动会设报名口令。口令在群公告里，或者问组织者。<//>
-      <${QA} q="谁能看到我的信息？">公开页面只显示名字的第一个字。完整名字、介绍人、付款人和留言只有组织者能看到。<//>
+      <${QA} q="谁能看到我的信息？">公开页面只显示名字的第一个字。完整名字和留言只有组织者能看到，介绍人、付款人也是。<//>
     </section>
     <section class="card stack"><h2 class="h-sec">费用</h2>
       <${QA} q="要花钱吗？">每场都写了费用。多数是「校友会补贴 + AA」，也有完全免费的。<//>
       <${QA} q="付款人填什么？">要收费的活动，报名时可以填 e-Transfer 转账时显示的名字或邮箱，组织者用来核对谁付了钱。<//>
     </section>
     <section class="card stack"><h2 class="h-sec">自己组织</h2>
-      <${QA} q="我也想组织一场">点右上角「发起活动」，写清楚时间、地点、人数。核心团队看过后就会上线，一般一两天内。<//>
-      <${QA} q="需要经费？">在「给核心团队的话」里写预计花费。校友会每年有一笔活动经费，金额较大的话核心团队会先和理事会沟通。<//>
-      <${QA} q="没审核的活动别人看得到吗？">看得到。首页「待审核的活动」里所有人都能看，但审核通过前不能报名。「给核心团队的话」只有核心团队看得到。<//>
-      <${QA} q="提交以后发现写错了？">首页「你提交的活动」里能看到审核进度。审核前点开就能修改，也可以撤回，不用重新提交。换了手机就看不到，找核心团队。<//>
+      <${QA} q="我也想组织一场">点右上角「发起活动」，写清楚时间地点和人数。Core Team 看过后就会上线，一般一两天内。<//>
+      <${QA} q="需要经费？">在「给 Core Team 的话」里写预计花费。校友会每年有一笔活动经费，金额较大的话 Core Team 会先和理事会沟通。<//>
+      <${QA} q="没审核的活动别人看得到吗？">看得到。首页「待审核的活动」里所有人都能看，但审核通过前不能报名。「给 Core Team 的话」只有 Core Team 看得到。<//>
+      <${QA} q="提交以后发现写错了？">首页「你提交的活动」里能看到审核进度。审核前点开就能修改，也可以撤回，不用重新提交。换了手机就看不到，找 Core Team。<//>
     </section>
     <section class="card stack"><h2 class="h-sec">安全须知</h2>
       <${QA} q="为什么要特别提醒？">校友群里出现过冒用身份、涉嫌诈骗的事。我们欢迎大家带朋友来，但交朋友和涉及钱的时候要多核实一步：Trust everyone, but verify everything。<//>
-      <${QA} q="活动费用付给谁？">只付给活动页上写明的「收款人」。核心团队不会私下找你要钱，也不会让你转到陌生账户。<//>
-      <${QA} q="遇到可疑的人或事？">有人以活动的名义借钱、代购、推销理财，或者身份对不上，先别转账，告诉核心团队（${CONFIG.team.join("、")}）。<//>
-      <${QA} q="第一次来为什么问介绍人？">方便组织者认识你、确认身份。写你是哪位校友的家属，或者是谁带你来的，只有核心团队看得到。<//>
+      <${QA} q="活动费用付给谁？">只付给活动页上写明的「收款人」。Core Team 不会私下找你要钱，也不会让你转到陌生账户。<//>
+      <${QA} q="遇到可疑的人或事？">有人以活动的名义借钱、代购，推销理财，或者身份对不上，先别转账，告诉 Core Team（${CONFIG.team.join("、")}）。<//>
+      <${QA} q="第一次来为什么问介绍人？">方便组织者认识你、确认身份。写你是哪位校友的家属，或者是谁带你来的，只有 Core Team 看得到。<//>
     </section>
-    <section class="card stack"><h2 class="h-sec">核心团队</h2>
-      <${QA} q="核心团队做什么？">审核和发布活动、管理名单，活动结束后登记实到人数和收据，年底出一份小回顾给理事会。入口在页面最下面。<//>
+    <section class="card stack"><h2 class="h-sec">Core Team</h2>
+      <${QA} q="Core Team 做什么？">审核和发布活动、管理名单，活动结束后登记实到人数和收据，年底出一份小回顾给理事会。入口在页面最下面。<//>
     </section>
   </div>`;
 }
 
 /* ====================================================================
-   核心团队
+   Core Team
    ==================================================================== */
 
 function teamStats(e, signups) {
@@ -1719,8 +1719,8 @@ function TeamLogin({ onIn }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   if (api.mode === "demo") return html`<div class="stack">
-    <h1 class="h-page">核心团队入口</h1>
-    <p class="muted">审核活动、看完整名单、登记实到人数和收据、看预算和年度回顾。</p>
+    <h1 class="h-page">Core Team 入口</h1>
+    <p class="muted">审核活动、看完整名单，登记实到人数和收据，也能看预算和年度回顾。</p>
     <p class="small muted">正式版每个人用自己的邮箱和密码登录（账号在 Supabase 里创建）。演示版直接进：</p>
     <button class="btn btn-primary" style="justify-self:start" onClick=${async () => onIn(await api.team.signIn())}>进入演示后台</button>
   </div>`;
@@ -1729,13 +1729,13 @@ function TeamLogin({ onIn }) {
     setBusy(true); setErr("");
     try {
       const s = await api.team.signIn(email.trim(), pw);
-      if (s && s.notTeam) { await api.team.signOut(); setErr("密码对了，但这个邮箱不在核心团队名单（team 表）里。"); setBusy(false); return; }
+      if (s && s.notTeam) { await api.team.signOut(); setErr("密码对了，但这个邮箱不在 Core Team 名单（team 表）里。"); setBusy(false); return; }
       onIn(s);
     } catch (x) { setErr(x && x.code === "bad_login" ? "邮箱或密码不对。" : errText(x)); setBusy(false); }
   }
   return html`<form class="stack" onSubmit=${submit}>
-    <div class="stack-xs"><h1 class="h-page">核心团队入口</h1>
-      <p class="muted small">审核活动、看完整名单、登记实到人数和收据、看预算和年度回顾。</p></div>
+    <div class="stack-xs"><h1 class="h-page">Core Team 入口</h1>
+      <p class="muted small">审核活动、看完整名单，登记实到人数和收据，也能看预算和年度回顾。</p></div>
     <div class="field"><label for="t-email">邮箱</label><input id="t-email" class="in" type="email" autocomplete="username" value=${email} onInput=${(x) => setEmail(x.target.value)} /></div>
     <div class="field"><label for="t-pw">密码</label><input id="t-pw" class="in" type="password" autocomplete="current-password" value=${pw} onInput=${(x) => setPw(x.target.value)} /></div>
     ${err && html`<p class="err" role="alert">${err}</p>`}
@@ -1781,7 +1781,7 @@ function TeamHome({ tab }) {
   else if (tab === "settings") body = html`<${Settings} settings=${data.settings} reload=${load} />`;
   else body = html`<${TeamEvents} events=${data.events} settings=${data.settings} reload=${load} />`;
   return html`<div class="stack">
-    <div class="tabs" role="tablist" aria-label="核心团队">${TABS.map(([k, l]) => html`<button key=${k} role="tab" aria-selected=${tab === k} onClick=${() => go(k === "events" ? "#/team" : "#/team/" + k)}>${l}</button>`)}</div>
+    <div class="tabs" role="tablist" aria-label="Core Team">${TABS.map(([k, l]) => html`<button key=${k} role="tab" aria-selected=${tab === k} onClick=${() => go(k === "events" ? "#/team" : "#/team/" + k)}>${l}</button>`)}</div>
     ${body}
   </div>`;
 }
@@ -1811,7 +1811,7 @@ function PendingCard({ e, settings, reload }) {
     <p class="small">${fmtWhen(e)} · ${e.location}</p>
     <p class="small muted">发起人 ${e.host_name}${e.host_contact ? ` · ${e.host_contact}` : ""} · 人数 ${e.capacity == null ? "不限" : e.capacity}${e.cost_note ? ` · ${e.cost_note}` : ""}</p>
     ${isPaid(e) && html`<p class="small">收款人：${e.payee || (cfg.default_payee ? `${cfg.default_payee}（默认收款人，通过时自动填上）` : html`<span class="err">还没定，先点「先改一下」写上</span>`)}</p>`}
-    ${e.proposer_note && html`<p class="note">给核心团队：${e.proposer_note}</p>`}
+    ${e.proposer_note && html`<p class="note">给 Core Team：${e.proposer_note}</p>`}
     ${e.description && html`<details><summary class="small muted" style="cursor:pointer">看介绍</summary><div style="margin-top:8px"><${RichText} text=${e.description} /></div></details>`}
     <div class="row">
       <button class="btn btn-primary btn-sm" disabled=${busy} onClick=${() => act("published")}>通过并上线</button>
@@ -1891,7 +1891,7 @@ function ChangePassword({ onDone }) {
     <div class="row"><button class="btn btn-primary btn-sm" disabled=${busy}>${busy ? "保存中…" : "保存新密码"}</button><button type="button" class="btn btn-ghost btn-sm" onClick=${onDone}>算了</button></div>
   </form>`;
 }
-// 免费版数据库没有自动备份：提醒核心团队定期下载一份。「上次备份」记在这台设备上
+// 免费版数据库没有自动备份：提醒 Core Team 定期下载一份。「上次备份」记在这台设备上
 function BackupCard({ events }) {
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState(() => store.get("erdai:lastBackup", null));
@@ -1912,7 +1912,7 @@ function BackupCard({ events }) {
   return html`<section class=${"card stack-sm" + (due ? " warn-card" : "")}>
     <h2 class="h-sec">备份</h2>
     <p class="small">${last ? `这台设备上次备份是${days === 0 ? "今天" : ` ${days} 天前`}。` : "这台设备还没下载过备份。"}免费版数据库没有自动备份，误删了就找不回。建议每场结算后下载一份，存到电脑或网盘。</p>
-    <p class="tiny muted">备份里有全部活动、报名名单（含介绍人和付款人）、结算和设置，不含收据照片，注意保管。</p>
+    <p class="tiny muted">备份里有全部活动和报名名单（含介绍人和付款人），结算和设置也在里面，不含收据照片，注意保管。</p>
     ${CAN_DOWNLOAD
       ? html`<button class="btn btn-quiet btn-sm" style="justify-self:start" disabled=${busy} onClick=${run}>${busy ? "准备中…" : "下载全部数据备份"}</button>`
       : html`<p class="hint">请在手机或电脑的浏览器里打开后台再下载（微信里下载不了）。</p>`}
@@ -1956,7 +1956,7 @@ function SignupRow({ s, e, scope, onChange }) {
       ${s.status === "going" && html`<button class=${"tick" + (s.attended ? " on" : "")} aria-pressed=${!!s.attended} disabled=${busy} onClick=${() => patch({ attended: !s.attended })}>${s.attended ? "已到 ✓" : "签到"}</button>`}
       ${s.status === "waitlist" && html`<button class="btn btn-quiet btn-xs" disabled=${busy} onClick=${() => patch({ status: "going" }, `${s.name} 已转为确认`)}>转为确认</button>`}
       ${confirm
-        ? html`<button class="btn btn-danger btn-xs" disabled=${busy} onClick=${() => patch({ status: "cancelled", cancelled_at: new Date().toISOString(), cancel_reason: "核心团队移除" }, `已移除 ${s.name}`)}>确认移除</button><button class="btn btn-ghost btn-xs" onClick=${() => setConfirm(false)}>算了</button>`
+        ? html`<button class="btn btn-danger btn-xs" disabled=${busy} onClick=${() => patch({ status: "cancelled", cancelled_at: new Date().toISOString(), cancel_reason: "Core Team 移除" }, `已移除 ${s.name}`)}>确认移除</button><button class="btn btn-ghost btn-xs" onClick=${() => setConfirm(false)}>算了</button>`
         : html`<button class="btn btn-ghost btn-xs" onClick=${() => setConfirm(true)}>移除</button>`}
     </div>`}
   </li>`;
@@ -2053,7 +2053,7 @@ function WrapUp({ e, st, onSaved }) {
   }
   return html`<form class="card stack" onSubmit=${save} novalidate>
     <div class="stack-xs"><h2 class="h-sec">活动结算${e.wrapped ? html` <span class="pill ok">已结算</span>` : null}</h2>
-      <p class="small muted">理事会要的就三样：实到人数、收据、年底回顾。这里填好，年度回顾会自动汇总。</p></div>
+      <p class="small muted">理事会只要实到人数和收据，年底再要一份回顾。这里填好，年度回顾会自动汇总。</p></div>
     <div class="grid2">
       <div class="field"><label for="w-count">实到人数<${Req} /></label><input id="w-count" class="in" type="number" required inputmode="numeric" min="0" value=${count} onInput=${(x) => setCount(x.target.value)} />
         <p class="hint">报名 ${st.going} 人，已签到 ${st.attended} 人</p></div>
@@ -2069,7 +2069,7 @@ function WrapUp({ e, st, onSaved }) {
       </div>
       <p class="hint">拍照就行，会自动压缩。电子收据的 PDF 也可以。上传后马上保存，不用等点下面的按钮。</p></div>
     <div class="field"><label for="w-notes">下次注意</label>
-      <textarea id="w-notes" class="in" rows="3" maxlength="2000" value=${notes} onInput=${(x) => setNotes(x.target.value)} placeholder="场地实际坐得下多少人、要提前几天订、找谁对接……"></textarea>
+      <textarea id="w-notes" class="in" rows="3" maxlength="2000" value=${notes} onInput=${(x) => setNotes(x.target.value)} placeholder="场地实际坐得下多少人、要提前几天订，还有找谁对接……"></textarea>
       <p class="hint">明年办同一类活动的人会看这里。</p></div>
     <button class="btn btn-primary" style="justify-self:start" disabled=${busy}>${busy ? "保存中…" : e.wrapped ? "更新结算" : "保存结算"}</button>
   </form>`;
@@ -2100,7 +2100,7 @@ function TeamEvent({ slug }) {
   const toVerify = signups.filter((s) => needsVerify(s, scope));
   const paidGroups = going.filter((s) => s.paid).length;
   return html`<div class="stack">
-    <button class="back" onClick=${nav("#/team")}>← 核心团队</button>
+    <button class="back" onClick=${nav("#/team")}>← Core Team</button>
     <header class="stack-xs">
       <div class="row"><${CatChips} cats=${e.categories} /><span class=${"pill " + stone}>${sl}</span>${e.closed ? html`<span class="pill">已截止报名</span>` : null}${e.join_code ? html`<span class="pill">需口令</span>` : null}</div>
       <h1 class="h-page">${e.title}</h1>
@@ -2154,7 +2154,7 @@ function TeamEditor({ slug }) {
   if (state.error) return html`<${ErrorBox} err=${state.error} />`;
   return html`<div class="stack">
     <button class="back" onClick=${nav(slug ? "#/team/e/" + slug : "#/team")}>← 返回</button>
-    <div class="stack-xs"><h1 class="h-page">${slug ? "编辑活动" : "新建活动"}</h1>${!slug && html`<p class="small muted">核心团队发的活动直接上线。</p>`}</div>
+    <div class="stack-xs"><h1 class="h-page">${slug ? "编辑活动" : "新建活动"}</h1>${!slug && html`<p class="small muted">Core Team 发的活动直接上线。</p>`}</div>
     <${EventForm} mode=${slug ? "team-edit" : "team-new"} initial=${state.e} settings=${settings} onDone=${(saved) => go("#/team/e/" + saved.slug)} />
   </div>`;
 }
@@ -2226,7 +2226,7 @@ function Budget({ events, settings, reload }) {
   </div>`;
 }
 const normName = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, "");
-// 几条报名规则做成开关：核心团队和会长商量定了以后自己切换，不用改代码
+// 几条报名规则做成开关：Core Team 和会长商量定了以后自己切换，不用改代码
 function Settings({ settings, reload }) {
   const [f, setF] = useState(() => teamCfg(settings));
   const [busy, setBusy] = useState(false);
@@ -2382,7 +2382,7 @@ function App() {
   UI.lightbox = setLightbox;
   UI.refresh = () => setVer((v) => v + 1);
   useEffect(() => {
-    if (route.name !== "event") document.title = route.name.startsWith("team") ? `核心团队 · ${CONFIG.name}` : CONFIG.name;
+    if (route.name !== "event") document.title = route.name.startsWith("team") ? `Core Team · ${CONFIG.name}` : CONFIG.name;
   }, [route.name]);
   let page;
   if (route.name === "event") page = html`<${EventPage} key=${route.slug} slug=${route.slug} />`;
