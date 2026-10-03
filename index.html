@@ -501,7 +501,7 @@ function statusPill(e, mine) {
   return [`还剩 ${left} 位`, "ok"];
 }
 function countSub(e) {
-  if (e.capacity == null) return "不限人数" + (e.going ? "，带朋友一起来也行" : "");
+  if (e.capacity == null) return "不限人数" + (e.going ? "，朋友也可以自己来报名" : "");
   const left = spotsLeft(e);
   if (left > 0) return `还剩 ${left} 个名额` + (e.waiting ? ` · 候补 ${e.waiting} 人` : "");
   if (!e.waitlist) return "已满，这场不开放候补。";
@@ -542,7 +542,8 @@ const ERR = {
   bad_image: "这张图打不开，换成 JPG 或 PNG 再试。",
   network: "网络好像断了，检查一下再试。",
   bad_code: "报名口令不对。口令一般在群公告里，也可以问组织者。",
-  referrer_required: "第一次来的朋友，请写一下你是哪位校友的家属，或者谁带你来的。",
+  referrer_required: "不在中欧群里的朋友，请写一下是谁介绍你来的。",
+  wechat_required: "不在中欧群里的朋友，请留一个微信号，Core Team 会加你确认。",
   not_pending: "这个申请已经审核过了，要改的话找 Core Team。",
 };
 function errText(x) {
@@ -566,7 +567,7 @@ const Mine = {
   drop(eventId) { const m = Mine.all(); delete m[eventId]; store.set(MINE_KEY, m); },
 };
 const Me = {
-  get: () => store.get("erdai:me", { name: "", payer: "" }),
+  get: () => ({ name: "", payer: "", inGroup: null, wechat: "", ...store.get("erdai:me", {}) }),
   set: (v) => store.set("erdai:me", v),
 };
 // 自己提交的活动申请：凭 token 看审核进度，审核前还能修改、撤回
@@ -616,9 +617,9 @@ const shareUrl = (e) => (FRAMED ? null : location.href.split("#")[0] + "#/e/" + 
 // 收费的活动：写了收款人，或者费用里提到 AA、$、转账
 const PAID_RE = /[$＄]|AA|e-?transfer|转账/i;
 const isPaid = (e) => !!(e.payee || PAID_RE.test(e.cost_note || ""));
-// 带来的朋友原则上自付。费用说明里已经提到朋友怎么算，就以那句为准
-const FRIEND_COST = "带来的朋友原则上自付费用";
-const friendCost = (e) => isPaid(e) && e.max_party > 1 && !/朋友/.test(e.cost_note || "");
+// 朋友原则上自付（会长 10-03 的建议）。费用说明里已经提到朋友怎么算，就以那句为准
+const FRIEND_COST = "朋友原则上自付相应费用";
+const friendCost = (e) => isPaid(e) && !/朋友/.test(e.cost_note || "");
 function announce(e, url, code) {
   const lines = [`【${CONFIG.name}】${e.title}`, `🕖 ${fmtWhen(e)}`, `📍 ${e.location}`];
   if (e.cost_note) lines.push(`💰 ${e.cost_note}${friendCost(e) ? `（${FRIEND_COST}）` : ""}`);
@@ -693,7 +694,7 @@ function useRoute() {
 const PUBLIC_FIELDS = ["payee", "id", "slug", "status", "title", "starts_at", "ends_at", "location", "map_url", "categories", "capacity", "max_party", "waitlist", "closed", "cost_note", "description", "host_name", "host_contact", "cover_url"];
 // 后台「设置」：数据库还没升级、读不到这些字段时，按原来的做法
 const teamCfg = (s) => ({ require_referrer: !s || s.require_referrer !== false, verify_scope: (s && s.verify_scope) || "all", default_join_code: !s || s.default_join_code !== false, default_payee: (s && s.default_payee) || "" });
-const EVENT_DEFAULTS = { payee: null, join_code: null, status: "published", ends_at: null, map_url: null, categories: [], capacity: null, max_party: 2, waitlist: true, closed: false, cost_note: null, description: null, host_name: null, host_contact: null, cover_url: null, proposer_note: null, sponsor_plan: null, board_ok: false, wrapped: false, actual_count: null, actual_cost: null, sponsor_amount: null, wrap_notes: null, receipts: [] };
+const EVENT_DEFAULTS = { cost_estimate: null, fund_detail: null, fund_status: "none", fund_approved: null, advance_amount: null, advance_received: false, payee: null, join_code: null, status: "published", ends_at: null, map_url: null, categories: [], capacity: null, max_party: 1, waitlist: true, closed: false, cost_note: null, description: null, host_name: null, host_contact: null, cover_url: null, proposer_note: null, sponsor_plan: null, board_ok: false, wrapped: false, actual_count: null, actual_cost: null, sponsor_amount: null, wrap_notes: null, receipts: [] };
 
 function liveApi() {
   const sb = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey, { auth: { persistSession: true, storageKey: "erdai-auth" } });
@@ -725,8 +726,10 @@ function liveApi() {
     },
     patchEvent: (id, patch) => q(sb.from("events").update(patch).eq("id", id).select().single()),
     addGuest(eventId, f) {
-      const args = { p_event: eventId, p_name: f.name, p_party: f.party, p_is_new: !!f.isNew, p_note: f.note || null };
+      const args = { p_event: eventId, p_name: f.name, p_party: 1, p_is_new: !!f.isNew, p_note: f.note || null };
       if (f.referrer) args.p_referrer = f.referrer;
+      if (f.wechat) args.p_wechat = f.wechat;
+      if (f.outsider) args.p_outsider = true;
       return rpc("team_add_guest", args);
     },
     patchSignup: (id, patch) => q(sb.from("signups").update(patch).eq("id", id).select().single()),
@@ -767,10 +770,11 @@ function liveApi() {
     listPending: async () => { try { return (await rpc("list_pending")) || []; } catch { return []; } },
     getEvent: (slug) => rpc("get_event", { p_slug: slug }),
     join(slug, f) {
-      const args = { p_slug: slug, p_name: f.name, p_party: f.party, p_is_new: !!f.isNew, p_note: f.note || null };
+      const args = { p_slug: slug, p_name: f.name, p_party: 1, p_is_new: !!f.isNew, p_note: f.note || null };
       if (f.code) args.p_code = f.code;  // 可选参数有值才传：没升级的数据库也能照常报名
       if (f.referrer) args.p_referrer = f.referrer;
       if (f.payer) args.p_payer = f.payer;
+      if (f.outsider) { args.p_outsider = true; args.p_wechat = f.wechat || null; }
       return rpc("join_event", args);
     },
     mySignup: (token) => rpc("my_signup", { p_token: token }),
@@ -799,7 +803,7 @@ function demoApi() {
     for (const k of PUBLIC_FIELDS) o[k] = e[k];
     return { ...clone(o), going: heads(going), waiting: heads(ss.filter((s) => s.status === "waitlist")), initials: going.map((s) => initialOf(s.name)), actual_count: e.wrapped ? e.actual_count : null, needs_code: !!String(e.join_code || "").trim(), referrer_required: teamCfg(db.settings).require_referrer };
   }
-  const PROP_FIELDS = ["slug", "status", "title", "starts_at", "ends_at", "location", "map_url", "categories", "capacity", "max_party", "waitlist", "cost_note", "description", "host_name", "host_contact", "proposer_note", "created_at"];
+  const PROP_FIELDS = ["slug", "status", "title", "starts_at", "ends_at", "location", "map_url", "categories", "capacity", "max_party", "waitlist", "cost_note", "description", "host_name", "host_contact", "proposer_note", "cost_estimate", "sponsor_plan", "advance_amount", "fund_detail", "created_at"];
   function propView(e) { const o = { token: e.edit_token }; for (const k of PROP_FIELDS) o[k] = e[k] ?? null; return clone(o); }
   function status(s) {
     const e = db.events.find((x) => x.id === s.event_id);
@@ -820,7 +824,7 @@ function demoApi() {
     const fits = e.capacity == null || goingHeads(e.id) + f.party <= e.capacity;
     const st = fits ? "going" : source === "team" || e.waitlist ? "waitlist" : null;
     if (!st) fail("full");
-    const s = { id: uid(), event_id: e.id, name: f.name.slice(0, 40), party_size: f.party, wechat: null, is_new: !!f.isNew, note: (f.note || "").slice(0, 300) || null, status: st, attended: false, verified: false, referrer: String(f.referrer || "").trim().slice(0, 60) || null, payer: String(f.payer || "").trim().slice(0, 80) || null, paid: false, source, cancel_token: uid(), cancel_reason: null, created_at: new Date().toISOString(), cancelled_at: null };
+    const s = { id: uid(), event_id: e.id, name: f.name.slice(0, 40), party_size: 1, wechat: String(f.wechat || "").trim().slice(0, 60) || null, outsider: !!f.outsider, is_new: !!f.isNew, note: (f.note || "").slice(0, 300) || null, status: st, attended: false, verified: false, referrer: String(f.referrer || "").trim().slice(0, 60) || null, payer: String(f.payer || "").trim().slice(0, 80) || null, paid: false, source, cancel_token: uid(), cancel_reason: null, created_at: new Date().toISOString(), cancelled_at: null };
     db.signups.push(s); save();
     return status(s);
   }
@@ -879,8 +883,10 @@ function demoApi() {
       if (hasStarted(e)) fail("started");
       const code = String(e.join_code || "").trim().toLowerCase();
       if (code && String(f.code || "").trim().toLowerCase() !== code) fail("bad_code");
-      if (f.isNew && !String(f.referrer || "").trim() && teamCfg(db.settings).require_referrer) fail("referrer_required");
-      if (!(f.party >= 1 && f.party <= e.max_party)) fail("party_size");
+      if (f.outsider && teamCfg(db.settings).require_referrer) {
+        if (!String(f.referrer || "").trim()) fail("referrer_required");
+        if (!String(f.wechat || "").trim()) fail("wechat_required");
+      }
       if (ofEvent(e.id).some((s) => s.status !== "cancelled" && s.name.trim().toLowerCase() === name.toLowerCase())) fail("duplicate");
       return insert(e, { ...f, name }, "web");
     },
@@ -899,7 +905,7 @@ function demoApi() {
       if (db.events.filter((e) => e.status === "pending").length >= 30) fail("too_many_pending");
       // 收款人只能由 Core Team 定，群友填的不收
       const { payee, ...rest } = clone(p);
-      const e = { ...clone(EVENT_DEFAULTS), ...rest, id: uid(), slug: makeSlug(p.starts_at), status: "pending", edit_token: uid(), created_at: new Date().toISOString() };
+      const e = { ...clone(EVENT_DEFAULTS), ...rest, max_party: 1, id: uid(), slug: makeSlug(p.starts_at), status: "pending", edit_token: uid(), created_at: new Date().toISOString() };
       db.events.push(e); save(); return { slug: e.slug, token: e.edit_token };
     },
     async myProposals(tokens) {
@@ -913,7 +919,7 @@ function demoApi() {
       if (e.status !== "pending") fail("not_pending");
       if (!p.starts_at || Date.parse(p.starts_at) < Date.now()) fail("invalid");
       const { payee, ...rest } = clone(p);
-      Object.assign(e, rest, { updated_at: new Date().toISOString() }); save();
+      Object.assign(e, rest, { max_party: 1, updated_at: new Date().toISOString() }); save();
       return propView(e);
     },
     async withdrawProposal(token) {
@@ -949,14 +955,15 @@ function demoSeed() {
   function add(o, going, opt = {}) {
     const id = "demo-e" + (++n);
     const created = Math.min(Date.parse(o.starts_at) - 24 * 864e5, now - 12 * 864e5);
-    const e = { ...clone(EVENT_DEFAULTS), ...o, id, slug: makeSlug(o.starts_at), created_at: new Date(created).toISOString() };
+    const e = { ...clone(EVENT_DEFAULTS), ...o, max_party: 1, id, slug: makeSlug(o.starts_at), created_at: new Date(created).toISOString() };
     events.push(e);
     const off = (n * 7) % NAMES.length;
     let got = 0, i = 0;
     const person = (status) => {
-      const size = opt.pairs && i % 4 === 2 && (status === "waitlist" || got + 2 <= going) ? 2 : 1;
+      const size = 1;
       const ni = (off + i) % NAMES.length, isNew = opt.newEvery ? i % opt.newEvery === 1 : false, attended = status === "going" && !!opt.attended && i % 7 !== 5;
-      signups.push({ id: `${id}-s${i}`, event_id: id, name: NAMES[ni], party_size: size, wechat: null, payer: o.payee && i % 2 === 0 ? `${NAMES[ni]}（e-Transfer）` : null, paid: !!o.payee && i % 4 === 0, is_new: isNew, note: i === 2 && opt.note ? opt.note : null, status, attended, verified: attended, referrer: isNew ? ["Kevin 带来的", "王总（EMBA 2015）的女儿", "Lily 的室友"][i % 3] : null, source: i % 9 === 4 ? "team" : "web", cancel_token: `${id}-t${i}`, cancel_reason: null, created_at: new Date(created + (i + 1) * 3 * 3600e3).toISOString(), cancelled_at: null });
+      const outsider = i % 7 === 3;
+      signups.push({ id: `${id}-s${i}`, event_id: id, name: NAMES[ni], party_size: size, outsider, wechat: outsider ? `wxid_demo${ni + 1}` : null, payer: o.payee && i % 2 === 0 ? `${NAMES[ni]}（e-Transfer）` : null, paid: !!o.payee && i % 4 === 0, is_new: isNew, note: i === 2 && opt.note ? opt.note : null, status, attended, verified: attended, referrer: outsider ? ["Kevin 介绍的", "Lily 的室友", "Amy 的同事"][i % 3] : null, source: i % 9 === 4 ? "team" : "web", cancel_token: `${id}-t${i}`, cancel_reason: null, created_at: new Date(created + (i + 1) * 3 * 3600e3).toISOString(), cancelled_at: null });
       i++;
       return size;
     };
@@ -975,9 +982,9 @@ function demoSeed() {
   const hike = onDow(16, 0, 10);
   add({ title: "High Park 秋叶徒步", categories: ["outdoor"], starts_at: hike, ends_at: sameDay(hike, 14), location: "High Park · Bloor St W 正门", capacity: 25, cost_note: "免费，自带午餐和水", host_name: "Chen", host_contact: "群里 @Chen", description: "枫叶最红的那两周。全程约 6 公里，路平，穿运动鞋就行。\n走完在 Grenadier Café 附近野餐。" , sponsor_plan: 0 }, 9, { newEvery: 3 });
   const bad = onDow(22, 5, 19, 30);
-  add({ title: "周五羽毛球局", categories: ["sport"], starts_at: bad, ends_at: sameDay(bad, 22), location: "Scarborough 羽毛球馆（订到场后公布）", capacity: 12, max_party: 2, payee: "Harry · e-Transfer", cost_note: "场地费 AA 约 $12/人", host_name: "Harry", description: "订了 3 片场，双打轮换。水平不限，带拍子；没拍子的说一声，有备用的。", sponsor_plan: 60 }, 12, { waiting: 3 });
+  add({ title: "周五羽毛球局", categories: ["sport"], starts_at: bad, ends_at: sameDay(bad, 22), location: "Scarborough 羽毛球馆（订到场后公布）", capacity: 12, payee: "Harry · e-Transfer", cost_note: "场地费 AA 约 $12/人", host_name: "Harry", cost_estimate: 144, fund_detail: "3 片场 × 2 小时，约 $144。", fund_status: "submitted", description: "订了 3 片场，双打轮换。水平不限，带拍子；没拍子的说一声，有备用的。", sponsor_plan: 60 }, 12, { waiting: 3 });
   const pot = onDow(28, 5, 19);
-  add({ title: "火锅夜", categories: ["food"], starts_at: pot, ends_at: sameDay(pot, 21, 30), location: "North York · Yonge & Sheppard 附近", capacity: 20, payee: "Ellesse · e-Transfer", cost_note: "AA 约 $35/人，校友会每人补贴 $10", host_name: "Ellesse", description: "天冷了，吃火锅。订了两张大桌，鸳鸯锅。", sponsor_plan: 200 }, 18, { pairs: true, newEvery: 4 });
+  add({ title: "火锅夜", categories: ["food"], starts_at: pot, ends_at: sameDay(pot, 21, 30), location: "North York · Yonge & Sheppard 附近", capacity: 20, payee: "Ellesse · e-Transfer", cost_note: "AA 约 $35/人，校友会每人补贴 $10", host_name: "Ellesse", description: "天冷了，吃火锅。订了两张大桌，鸳鸯锅。", sponsor_plan: 200, cost_estimate: 700, fund_detail: "两张大桌约 $700，二代每人补贴 $10，按 20 人算 $200。要先付 $100 订金。", advance_amount: 100, fund_status: "approved", fund_approved: 200 }, 18, { pairs: true, newEvery: 4 });
   const car = onDow(40, 4, 19);
   add({ title: "前辈聊聊：金融 / 科技求职", categories: ["career"], starts_at: car, ends_at: sameDay(car, 21), location: "UofT St. George 附近（会议室待定）", capacity: 40, join_code: "ceibs", cost_note: "免费，提供茶点", host_name: "Harry", description: "（演示：这场要报名口令，口令是 ceibs）\n请三位在银行和科技公司工作的校友前辈，每人讲 15 分钟，之后自由交流。\n- 实习和全职怎么找\n- 简历怎么写、面试怎么准备\n- 工签和身份的现实问题\n带简历来的话，可以现场帮你看。", sponsor_plan: 600 }, 22, { newEvery: 3 });
   const mkt = onDow(62, 6, 17);
@@ -1313,14 +1320,17 @@ function WhoGoing({ e }) {
 function JoinForm({ e, onJoined }) {
   const me = Me.get();
   const [name, setName] = useState(me.name || "");
-  const [party, setParty] = useState(1);
   const [isNew, setIsNew] = useState(false);
+  const [inGroup, setInGroup] = useState(me.inGroup);  // 本来就在中欧的微信群里吗：true / false / null 还没选
   const [note, setNote] = useState("");
   const [code, setCode] = useState("");
   const [referrer, setReferrer] = useState("");
+  const [wechat, setWechat] = useState(me.wechat || "");
   const [payer, setPayer] = useState(me.payer || "");
   const paid = isPaid(e);
+  const outsider = inGroup === false;
   const refRequired = e.referrer_required !== false;  // 数据库没升级时不带这个字段，按必填算
+  const party = 1;  // 不开放带人，每个人自己报名
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const left = spotsLeft(e);
@@ -1330,20 +1340,18 @@ function JoinForm({ e, onJoined }) {
     ev.preventDefault();
     if (!name.trim()) { setErr(ERR.name_required); return; }
     if (e.needs_code && !code.trim()) { setErr("先填报名口令。"); return; }
-    if (isNew && refRequired && !referrer.trim()) { setErr(ERR.referrer_required); return; }
+    if (inGroup == null) { setErr("选一下你本来是不是就在中欧的微信群里。"); return; }
+    if (outsider && refRequired && !referrer.trim()) { setErr(ERR.referrer_required); return; }
+    if (outsider && refRequired && !wechat.trim()) { setErr(ERR.wechat_required); return; }
     setBusy(true); setErr("");
     let s;
-    try { s = await api.join(e.slug, { name: name.trim(), party, isNew, note: note.trim(), code: code.trim(), referrer: isNew ? referrer.trim() : "", payer: paid ? payer.trim() : "" }); }
+    try { s = await api.join(e.slug, { name: name.trim(), isNew, note: note.trim(), code: code.trim(), outsider, referrer: outsider ? referrer.trim() : "", wechat: outsider ? wechat.trim() : "", payer: paid ? payer.trim() : "" }); }
     catch (x) { setErr(errText(x)); setBusy(false); return; }
     Mine.put(e.id, { token: s.token, slug: e.slug });
-    Me.set({ name: name.trim(), payer: (paid && payer.trim()) || me.payer || "" });
+    Me.set({ name: name.trim(), inGroup, wechat: (outsider && wechat.trim()) || me.wechat || "", payer: (paid && payer.trim()) || me.payer || "" });
     UI.toast(s.status === "waitlist" ? `已加入候补，第 ${s.position} 位` : "报名成功，到时见！");
     onJoined();
   }
-  const partyHint = (over && e.waitlist ? `现在只剩 ${left} 个名额，${party} 人会排进候补。`
-    : party > 1 ? "名额按人头算。报名后人数不能改，要改得先取消再重报，会排到后面。"
-    : e.max_party > 1 ? `带朋友一起来就加人数（最多 ${e.max_party} 人）。` : "这场每人只能报自己。")
-    + (friendCost(e) ? `${FRIEND_COST}。` : "");
   return html`<form class="card stack" onSubmit=${submit} novalidate>
     <h2 class="h-sec">${over && e.waitlist ? "名额满了，可以排候补" : "报名"}</h2>
     <div class="field"><label for="j-name">你的名字<${Req} /></label>
@@ -1351,17 +1359,22 @@ function JoinForm({ e, onJoined }) {
     ${e.needs_code && html`<div class="field"><label for="j-code">报名口令<${Req} /></label>
       <input id="j-code" class="in" required value=${code} onInput=${(x) => setCode(x.target.value)} maxlength="20" autocapitalize="off" autocomplete="off" />
       <p class="hint">这场要口令才能报名，口令一般在群公告里。</p></div>`}
-    <div class="field"><span class="label" id="j-party-l">一共几个人（含你自己）</span>
-      <${Counter} id="j-party" value=${party} min=${1} max=${e.max_party} onChange=${setParty} labelledby="j-party-l" />
-      <p class="hint">${partyHint}</p></div>
+    <p class="hint" style="margin-top:-6px">每个人自己报名，不能替别人报。朋友想来，让 TA 自己点开链接报名。${over && e.waitlist ? "现在名额满了，报名会排进候补。" : ""}</p>
+    <div class="field"><span class="label" id="j-grp-l">你本来就在中欧的微信群里吗？<${Req} /></span>
+      <div class="stack-xs" role="radiogroup" aria-labelledby="j-grp-l">
+        <label class="check" for="j-in"><input id="j-in" type="radio" name="j-grp" checked=${inGroup === true} onChange=${() => setInGroup(true)} /><span>在</span></label>
+        <label class="check" for="j-out"><input id="j-out" type="radio" name="j-grp" checked=${inGroup === false} onChange=${() => setInGroup(false)} /><span>不在，是朋友介绍来的</span></label>
+      </div></div>
+    ${outsider && html`<div class="field"><label for="j-ref">谁介绍你来的？${refRequired ? html`<${Req} />` : html` <span class="opt-tag">选填</span>`}</label>
+      <input id="j-ref" class="in" required=${refRequired} value=${referrer} onInput=${(x) => setReferrer(x.target.value)} maxlength="60" placeholder="比如：Amy 介绍的 / XX 级 XX 校友的朋友" /></div>
+    <div class="field"><label for="j-wx">你的微信号${refRequired ? html`<${Req} />` : html` <span class="opt-tag">选填</span>`}</label>
+      <input id="j-wx" class="in" required=${refRequired} value=${wechat} onInput=${(x) => setWechat(x.target.value)} maxlength="60" autocapitalize="off" autocomplete="off" />
+      <p class="hint">Core Team 会加你确认身份。介绍人和微信号只有 Core Team 看得到。${friendCost(e) ? `${FRIEND_COST}。` : ""}</p></div>`}
     ${paid && html`<div class="field"><label for="j-payer">付款人 <span class="opt-tag">选填</span></label>
       <input id="j-payer" class="in" value=${payer} onInput=${(x) => setPayer(x.target.value)} maxlength="80" autocapitalize="off" autocomplete="off" placeholder="e-Transfer 转账时显示的名字或邮箱" />
       <p class="hint">方便组织者核对谁付了钱。只有组织者看得到。</p></div>`}
     <label class="check" for="j-new"><input id="j-new" type="checkbox" checked=${isNew} onChange=${(x) => setIsNew(x.target.checked)} />
       <span>我是第一次参加 / 刚到${CONFIG.city}<span class="hint block">组织者会特别招呼一下新朋友。</span></span></label>
-    ${isNew && html`<div class="field"><label for="j-ref">你是哪位校友的家属，或者谁带你来的？${refRequired ? html`<${Req} />` : html` <span class="opt-tag">选填</span>`}</label>
-      <input id="j-ref" class="in" required=${refRequired} value=${referrer} onInput=${(x) => setReferrer(x.target.value)} maxlength="60" placeholder="比如：XX 级 XX 校友的女儿 / Amy 带我来的" />
-      <p class="hint">方便组织者认识你、确认身份。只有 Core Team 看得到。</p></div>`}
     <div class="field"><label for="j-note">想跟组织者说的 <span class="opt-tag">选填</span></label>
       <textarea id="j-note" class="in" rows="2" maxlength="300" value=${note} onInput=${(x) => setNote(x.target.value)} placeholder="比如忌口、会晚到"></textarea></div>
     ${err && html`<p class="err" role="alert">${err}</p>`}
@@ -1467,11 +1480,12 @@ function EventPage({ slug }) {
 
 /* ---------------------------------------------------- 发起 / 编辑活动 */
 
-const EMPTY_FORM = { payee: "", join_code: "", title: "", categories: [], start: "", end: "", location: "", map_url: "", capacity: "", max_party: 2, waitlist: true, cost_note: "", description: "", host_name: "", host_contact: "", proposer_note: "", cover_url: "", sponsor_plan: "", board_ok: false };
+const EMPTY_FORM = { cost_estimate: "", advance_amount: "", fund_detail: "", payee: "", join_code: "", title: "", categories: [], start: "", end: "", location: "", map_url: "", capacity: "", max_party: 1, waitlist: true, cost_note: "", description: "", host_name: "", host_contact: "", proposer_note: "", cover_url: "", sponsor_plan: "", board_ok: false };
 function toForm(e) {
   const f = { ...EMPTY_FORM };
   for (const k of Object.keys(EMPTY_FORM)) if (e[k] != null) f[k] = e[k];
-  return { ...f, start: isoToLocal(e.starts_at), end: isoToLocal(e.ends_at), capacity: e.capacity == null ? "" : String(e.capacity), sponsor_plan: e.sponsor_plan == null ? "" : String(e.sponsor_plan), categories: (e.categories || []).slice() };
+  const num = (x) => (x == null ? "" : String(x));
+  return { ...f, start: isoToLocal(e.starts_at), end: isoToLocal(e.ends_at), capacity: num(e.capacity), sponsor_plan: num(e.sponsor_plan), cost_estimate: num(e.cost_estimate), advance_amount: num(e.advance_amount), categories: (e.categories || []).slice() };
 }
 // mode：propose 群友发起 / propose-edit 群友改自己还没审核的申请 / team-new / team-edit
 function EventForm({ mode, initial, settings, onDone }) {
@@ -1504,7 +1518,7 @@ function EventForm({ mode, initial, settings, onDone }) {
     if (f.capacity !== "" && !(/^\d+$/.test(String(f.capacity)) && +f.capacity >= 1 && +f.capacity <= 500)) return "人数上限填 1–500 的整数，不限就留空。";
     if (!f.host_name.trim()) return "写一下组织者的名字。";
     if (team && PAID_RE.test(f.cost_note) && !f.payee.trim()) return "这场要收钱，写一下收款人：谁收钱、怎么付（比如「Harry · e-Transfer」）。";
-    if (team && f.sponsor_plan !== "" && !(+f.sponsor_plan >= 0)) return "校友会承担的金额填一个数字。";
+    for (const k of ["cost_estimate", "sponsor_plan", "advance_amount"]) if (f[k] !== "" && !(+f[k] >= 0)) return "经费那几栏填数字，不需要就留空。";
     return "";
   }
   async function onCover(ev) {
@@ -1524,13 +1538,15 @@ function EventForm({ mode, initial, settings, onDone }) {
     const p = {
       title: f.title.trim(), categories: f.categories, starts_at: localToISO(f.start), ends_at: f.end ? localToISO(f.end) : null,
       location: f.location.trim(), map_url: f.map_url.trim() || null, capacity: f.capacity === "" ? null : parseInt(f.capacity, 10),
-      max_party: +f.max_party, waitlist: !!f.waitlist, cost_note: f.cost_note.trim() || null, description: f.description.trim() || null,
+      max_party: 1, waitlist: !!f.waitlist, cost_note: f.cost_note.trim() || null, description: f.description.trim() || null,
       host_name: f.host_name.trim(), host_contact: f.host_contact.trim() || null,
+      cost_estimate: f.cost_estimate === "" ? null : +f.cost_estimate, sponsor_plan: f.sponsor_plan === "" ? null : +f.sponsor_plan,
+      advance_amount: f.advance_amount === "" ? null : +f.advance_amount, fund_detail: f.fund_detail.trim() || null,
     };
     if (propose) p.proposer_note = f.proposer_note.trim() || null;
     if (team && (f.payee.trim() || (initial && initial.payee))) p.payee = f.payee.trim() || null;
     if (team) {
-      p.cover_url = f.cover_url || null; p.sponsor_plan = f.sponsor_plan === "" ? null : +f.sponsor_plan; p.board_ok = !!f.board_ok;
+      p.cover_url = f.cover_url || null;
       if (f.join_code.trim() || (initial && initial.join_code)) p.join_code = f.join_code.trim() || null;
     }
     let saved;
@@ -1543,7 +1559,6 @@ function EventForm({ mode, initial, settings, onDone }) {
     if (mode !== "propose") UI.toast(mode === "team-new" ? "已发布" : mode === "propose-edit" ? "已保存修改" : "已保存");
     onDone(saved);
   }
-  const big = team && settings && f.sponsor_plan !== "" && +f.sponsor_plan >= +settings.big_amount;
   return html`<form class="stack" onSubmit=${submit} novalidate>
     <p class="hint"><span class="req" style="margin:0 2px 0 0">*</span>为必填，其余可以留空。</p>
     <div class="field"><label for="f-title">活动名称<${Req} /></label>
@@ -1560,18 +1575,14 @@ function EventForm({ mode, initial, settings, onDone }) {
     <div class="field"><label for="f-map">地图链接 <span class="opt-tag">选填</span></label>
       <input id="f-map" class="in" type="url" maxlength="500" value=${f.map_url} onInput=${set("map_url")} placeholder="Google 地图的分享链接" />
       <p class="hint">不填的话，「地图」按钮会按地点搜索。</p></div>
-    <div class="grid2">
-      <div class="field"><label for="f-cap">人数上限</label>
-        <input id="f-cap" class="in" type="number" inputmode="numeric" min="1" max="500" value=${f.capacity} onInput=${set("capacity")} placeholder="不限" />
-        <p class="hint">按人头算，留空就是不限。</p></div>
-      <div class="field"><label for="f-party">每人最多带几位</label>
-        <select id="f-party" class="in" onChange=${set("max_party")}>${[1, 2, 3, 4].concat(+f.max_party > 4 ? [+f.max_party] : []).map((n) => html`<option key=${n} value=${n} selected=${+f.max_party === n}>${n === 1 ? "只能自己来" : `连自己共 ${n} 人`}</option>`)}</select></div>
-    </div>
+    <div class="field"><label for="f-cap">人数上限</label>
+      <input id="f-cap" class="in" type="number" inputmode="numeric" min="1" max="500" value=${f.capacity} onInput=${set("capacity")} placeholder="不限" />
+      <p class="hint">留空就是不限。每个人自己报名，不能带人。</p></div>
     <label class="check" for="f-wait"><input id="f-wait" type="checkbox" checked=${f.waitlist} onChange=${set("waitlist")} />
       <span>满了以后开放候补<span class="hint block">有人取消时，系统按报名顺序自动补上。</span></span></label>
     <div class="field"><label for="f-cost">费用 <span class="opt-tag">选填</span></label>
       <input id="f-cost" class="in" maxlength="120" value=${f.cost_note} onInput=${set("cost_note")} placeholder="比如：免费 / AA 约 $30，校友会每人补贴 $10" />
-      <p class="hint">${FRIEND_COST}。这场另有安排的话写在这里，比如「朋友也补贴」。</p></div>
+      <p class="hint">会公开。${FRIEND_COST}，这场另有安排的话写在这里，比如「朋友也补贴」。</p></div>
     ${team && html`<div class="field"><label for="f-payee">收款人 <span class="opt-tag">收费的活动必填</span></label>
       <input id="f-payee" class="in" maxlength="80" value=${f.payee} onInput=${set("payee")} placeholder="比如：Harry · e-Transfer" />
       <p class="hint">活动页会写明「费用只付给这个人」，防止有人冒充组织者收钱。</p></div>`}
@@ -1582,22 +1593,31 @@ function EventForm({ mode, initial, settings, onDone }) {
       <div class="field"><label for="f-host">组织者<${Req} /></label><input id="f-host" class="in" required maxlength="60" value=${f.host_name} onInput=${set("host_name")} /></div>
       <div class="field"><label for="f-contact">联系方式 <span class="opt-tag">会公开</span></label><input id="f-contact" class="in" maxlength="120" value=${f.host_contact} onInput=${set("host_contact")} placeholder="微信号，或「群里 @我」" /></div>
     </div>
+    <fieldset class="team-only"><legend>经费 <span class="opt-tag">不公开，不需要就留空</span></legend>
+      <div class="grid2">
+        <div class="field"><label for="f-est">预计总花费（加元）</label>
+          <input id="f-est" class="in" type="number" inputmode="decimal" min="0" step="1" value=${f.cost_estimate} onInput=${set("cost_estimate")} placeholder="0" /></div>
+        <div class="field"><label for="f-sp">申请校友会承担（加元）</label>
+          <input id="f-sp" class="in" type="number" inputmode="decimal" min="0" step="1" value=${f.sponsor_plan} onInput=${set("sponsor_plan")} placeholder="0" /></div>
+      </div>
+      <div class="field"><label for="f-adv">要先付订金或订场吗？需要预拨多少（加元）</label>
+        <input id="f-adv" class="in" type="number" inputmode="decimal" min="0" step="1" value=${f.advance_amount} onInput=${set("advance_amount")} placeholder="不需要就留空" />
+        <p class="hint">校友会可以先把这笔钱拨给你，免得个人垫付大额费用。</p></div>
+      <div class="field"><label for="f-fund">方案和预算明细</label>
+        <textarea id="f-fund" class="in" rows="3" maxlength="1500" value=${f.fund_detail} onInput=${set("fund_detail")} placeholder="比如：场地 $200（订金 $100）、饮料 $50；二代每人补贴 $10"></textarea>
+        <p class="hint">${propose ? "Core Team 会整理成经费申请发给会长，批了再办，结束后凭收据结算。" : "在活动页「经费申请」里一键复制给会长。"}</p></div>
+    </fieldset>
     ${propose && html`<div class="field"><label for="f-pnote">给 Core Team 的话 <span class="opt-tag">不公开</span></label>
-      <textarea id="f-pnote" class="in" rows="3" maxlength="500" value=${f.proposer_note} onInput=${set("proposer_note")} placeholder="需要校友会经费吗？大概多少？Core Team 怎么联系你？"></textarea></div>`}
+      <textarea id="f-pnote" class="in" rows="3" maxlength="500" value=${f.proposer_note} onInput=${set("proposer_note")} placeholder="Core Team 怎么联系你？还有别的想说的也写在这里。"></textarea></div>`}
     ${team && html`<fieldset class="team-only"><legend>Core Team 填写</legend>
       <div class="field"><span class="label">封面 <span class="opt-tag">选填</span></span>
         <${Cover} e=${{ categories: f.categories, cover_url: f.cover_url }} />
         <div class="row"><label class="btn btn-quiet btn-sm">${coverBusy ? "上传中…" : f.cover_url ? "换一张" : "上传照片"}<input class="vh" type="file" accept="image/*" onChange=${onCover} /></label>
           ${f.cover_url && html`<button type="button" class="btn btn-ghost btn-sm" onClick=${() => setF((o) => ({ ...o, cover_url: "" }))}>用默认封面</button>`}</div>
         <p class="hint">没有照片就按类型生成封面。</p></div>
-      <div class="field"><label for="f-sp">预计校友会承担（加元）</label>
-        <input id="f-sp" class="in" type="number" inputmode="decimal" min="0" step="1" value=${f.sponsor_plan} onInput=${set("sponsor_plan")} placeholder="0" />
-        <p class="hint">用来算年度预算。活动结束后在「结算」里填实际花了多少。</p></div>
       <div class="field"><label for="f-code">报名口令 <span class="opt-tag">选填</span></label>
         <input id="f-code" class="in" maxlength="20" value=${f.join_code} onInput=${set("join_code")} autocapitalize="off" autocomplete="off" placeholder="比如 ceibs2026" />
         <p class="hint">填了以后要输入口令才能报名，防止链接被转出去后有外人乱报。口令只发在群里；留空就不需要。${cfg.default_join_code ? "新建活动时会自动生成一个（在「设置」里可以关掉）。" : ""}</p></div>
-      ${big && html`<label class="check" for="f-board"><input id="f-board" type="checkbox" checked=${f.board_ok} onChange=${set("board_ok")} />
-        <span>已经和理事会沟通过<span class="hint block">单场达到 ${money(settings.big_amount)} 算较大金额，按约定要提前沟通。</span></span></label>`}
     </fieldset>`}
     ${err && html`<p class="err" role="alert">${err}</p>`}
     <div class="row"><button class="btn btn-primary" type="submit" disabled=${busy}>${busy ? "提交中…" : mode === "propose" ? "提交给 Core Team" : mode === "propose-edit" ? "保存修改" : mode === "team-new" ? "发布" : "保存"}</button></div>
@@ -1621,7 +1641,7 @@ function Propose({ slug }) {
   return html`<div class="stack">
     <button class="back" onClick=${nav("#/")}>← 全部活动</button>
     <div class="stack-xs"><h1 class="h-page">发起一场活动</h1>
-      <p class="small muted">提交以后，大家在首页「待审核的活动」里就能看到（只能看，不能报名），Core Team 审核通过后开放报名。「给 Core Team 的话」只有 Core Team 看得到。需要校友会经费的话，写在那里。</p></div>
+      <p class="small muted">提交以后，大家在首页「待审核的活动」里就能看到（只能看，不能报名），Core Team 审核通过后开放报名。「经费」和「给 Core Team 的话」只有 Core Team 看得到。</p></div>
     <${EventForm} mode="propose" onDone=${onDone} />
   </div>`;
 }
@@ -1674,13 +1694,13 @@ function Help() {
     <div class="stack-xs"><h1 class="h-page">怎么用</h1>
       <p class="muted">${CONFIG.org}二代在${CONFIG.city}的活动报名板。从聚餐、户外运动到新人欢迎和职业交流，都在这里报名。</p></div>
     <section class="card stack"><h2 class="h-sec">报名</h2>
-      <${QA} q="要注册吗？">不用。点开活动，写上名字、选好人数，点「报名」就行。这台手机会记住你，下次名字自动填好。<//>
-      <${QA} q="带朋友一起来？">名额按人头算：你加两个朋友就选 3，每场最多带几位看活动页。报名后人数不能改，要改得先取消再重报。带来的朋友原则上自付费用，具体看每场的费用说明。<//>
-      <${QA} q="满员了怎么办？">可以排候补。有人取消时，系统按报名顺序自动把候补的人补上，不用谁盯着。一组人太多、剩下的名额装不下时，先跳过这组，位置保留。<//>
+      <${QA} q="要注册吗？">不用。点开活动，写上名字，点「报名」就行。这台手机会记住你，下次名字自动填好。<//>
+      <${QA} q="能带朋友来吗？">欢迎，但每个人自己报名，不能替别人报。朋友如果本来不在中欧的微信群里，报名时写清楚是谁介绍来的，再留个微信号。朋友原则上自付相应费用，具体看每场的费用说明。<//>
+      <${QA} q="满员了怎么办？">可以排候补。有人取消时，系统按报名顺序自动把候补的人补上，不用谁盯着。<//>
       <${QA} q="怎么取消？">用报名时的那台手机打开活动，点「我去不了了」。换了手机的话，找组织者帮你取消。<//>
       <${QA} q="在微信里打开可以吗？">可以。报名记录存在你打开它的地方：在微信里报的名，以后也在微信里打开同一个链接查看或取消。想加到手机日历，点右上角「···」选「在浏览器打开」。<//>
       <${QA} q="有的活动要口令？">为了防止链接被转出去后有外人乱报，有的活动会设报名口令。口令在群公告里，或者问组织者。<//>
-      <${QA} q="谁能看到我的信息？">公开页面只显示名字的第一个字。完整名字和留言只有组织者能看到，介绍人、付款人也是。<//>
+      <${QA} q="谁能看到我的信息？">公开页面只显示名字的第一个字。完整名字和留言只有组织者能看到，介绍人、微信号和付款人也是。<//>
     </section>
     <section class="card stack"><h2 class="h-sec">费用</h2>
       <${QA} q="要花钱吗？">每场都写了费用。多数是「校友会补贴 + AA」，也有完全免费的。<//>
@@ -1688,7 +1708,7 @@ function Help() {
     </section>
     <section class="card stack"><h2 class="h-sec">自己组织</h2>
       <${QA} q="我也想组织一场">点右上角「发起活动」，写清楚时间地点和人数。Core Team 看过后就会上线，一般一两天内。<//>
-      <${QA} q="需要经费？">在「给 Core Team 的话」里写预计花费。校友会每年有一笔活动经费，金额较大的话 Core Team 会先和理事会沟通。<//>
+      <${QA} q="需要校友会经费？">提交时在「经费」里填预计总花费和希望校友会承担多少，要先付订金或订场的也写上。Core Team 把方案和预算发给会长，批了再办，结束后凭收据结算。订场、订金可以申请预拨，尽量不让个人垫付大额费用。<//>
       <${QA} q="没审核的活动别人看得到吗？">看得到。首页「待审核的活动」里所有人都能看，但审核通过前不能报名。「给 Core Team 的话」只有 Core Team 看得到。<//>
       <${QA} q="提交以后发现写错了？">首页「你提交的活动」里能看到审核进度。审核前点开就能修改，也可以撤回，不用重新提交。换了手机就看不到，找 Core Team。<//>
     </section>
@@ -1696,7 +1716,7 @@ function Help() {
       <${QA} q="为什么要特别提醒？">校友群里出现过冒用身份、涉嫌诈骗的事。我们欢迎大家带朋友来，但交朋友和涉及钱的时候要多核实一步：Trust everyone, but verify everything。<//>
       <${QA} q="活动费用付给谁？">只付给活动页上写明的「收款人」。Core Team 不会私下找你要钱，也不会让你转到陌生账户。<//>
       <${QA} q="遇到可疑的人或事？">有人以活动的名义借钱、代购，推销理财，或者身份对不上，先别转账，告诉 Core Team（${CONFIG.team.join("、")}）。<//>
-      <${QA} q="第一次来为什么问介绍人？">方便组织者认识你、确认身份。写你是哪位校友的家属，或者是谁带你来的，只有 Core Team 看得到。<//>
+      <${QA} q="不在中欧群里，为什么要写介绍人和微信号？">方便 Core Team 认识你、确认身份。这两项只有 Core Team 看得到。<//>
     </section>
     <section class="card stack"><h2 class="h-sec">Core Team</h2>
       <${QA} q="Core Team 做什么？">审核和发布活动、管理名单，活动结束后登记实到人数和收据，年底出一份小回顾给理事会。入口在页面最下面。<//>
@@ -1711,7 +1731,7 @@ function Help() {
 function teamStats(e, signups) {
   const ss = signups || e.signups || [];
   const going = ss.filter((s) => s.status === "going");
-  return { going: heads(going), waiting: heads(ss.filter((s) => s.status === "waitlist")), newcomers: going.filter((s) => s.is_new).length, attended: heads(going.filter((s) => s.attended)) };
+  return { going: heads(going), waiting: heads(ss.filter((s) => s.status === "waitlist")), newcomers: going.filter((s) => s.is_new).length, outsiders: going.filter((s) => s.outsider).length, attended: heads(going.filter((s) => s.attended)) };
 }
 function TeamLogin({ onIn }) {
   const [email, setEmail] = useState("");
@@ -1790,7 +1810,7 @@ function TeamRow({ e, hint }) {
   return html`<a class="trow" href=${"#/team/e/" + e.slug} onClick=${nav("#/team/e/" + e.slug)}>
     <${DateTile} iso=${e.starts_at} small />
     <div class="grow"><p class="trow-title">${e.title}</p>
-      <p class="tiny muted">${fmtClock(e.starts_at)} · ${e.capacity != null ? `${st.going}/${e.capacity}` : st.going} 人${st.waiting ? ` · 候补 ${st.waiting}` : ""}${st.newcomers ? ` · 新朋友 ${st.newcomers}` : ""}</p></div>
+      <p class="tiny muted">${fmtClock(e.starts_at)} · ${e.capacity != null ? `${st.going}/${e.capacity}` : st.going} 人${st.waiting ? ` · 候补 ${st.waiting}` : ""}${st.newcomers ? ` · 新朋友 ${st.newcomers}` : ""}${st.outsiders ? ` · 群外 ${st.outsiders}` : ""}</p></div>
     ${hint ? html`<span class=${"pill " + hint[1]}>${hint[0]}</span>` : null}
   </a>`;
 }
@@ -1811,6 +1831,8 @@ function PendingCard({ e, settings, reload }) {
     <p class="small">${fmtWhen(e)} · ${e.location}</p>
     <p class="small muted">发起人 ${e.host_name}${e.host_contact ? ` · ${e.host_contact}` : ""} · 人数 ${e.capacity == null ? "不限" : e.capacity}${e.cost_note ? ` · ${e.cost_note}` : ""}</p>
     ${isPaid(e) && html`<p class="small">收款人：${e.payee || (cfg.default_payee ? `${cfg.default_payee}（默认收款人，通过时自动填上）` : html`<span class="err">还没定，先点「先改一下」写上</span>`)}</p>`}
+    ${(e.cost_estimate != null || e.sponsor_plan != null || +e.advance_amount > 0) && html`<p class="small">经费：${fundSummary(e)}</p>`}
+    ${e.fund_detail && html`<p class="note">方案和预算：${e.fund_detail}</p>`}
     ${e.proposer_note && html`<p class="note">给 Core Team：${e.proposer_note}</p>`}
     ${e.description && html`<details><summary class="small muted" style="cursor:pointer">看介绍</summary><div style="margin-top:8px"><${RichText} text=${e.description} /></div></details>`}
     <div class="row">
@@ -1857,8 +1879,49 @@ function approvePatch(e, settings) {
   if (isPaid(e) && !e.payee) { if (!cfg.default_payee) return null; p.payee = cfg.default_payee; }
   return p;
 }
-// 后台「待核实」提醒谁：all 所有没核实过的人 / new 只提醒新朋友 / off 不提醒
-const needsVerify = (s, scope) => s.status !== "cancelled" && !s.verified && (scope === "all" || (scope === "new" && s.is_new));
+// 后台「待核实」提醒谁：all 所有没核实过的人 / new 只提醒群外的人和新朋友 / off 不提醒
+const needsVerify = (s, scope) => s.status !== "cancelled" && !s.verified && (scope === "all" || (scope === "new" && (s.outsider || s.is_new)));
+// 经费申请（会长 10-03：年度额度 + 逐次申请，批了再办，凭收据结算，订场订金可以预拨）
+const FUND = { none: ["未申请", "warn"], submitted: ["已提交，等批复", "hot"], approved: ["已批准", "ok"], declined: ["没批", ""] };
+const fundSummary = (e) => [e.cost_estimate != null ? `预计总花费 ${money(e.cost_estimate)}` : null, e.sponsor_plan != null ? `申请校友会承担 ${money(e.sponsor_plan)}` : "还没填申请金额", +e.advance_amount > 0 ? `需要预拨 ${money(e.advance_amount)}` : null].filter(Boolean).join(" · ");
+function fundText(e, st) {
+  const L = [`【${CONFIG.name} · 活动经费申请】`, `活动：${e.title}`, `时间：${fmtWhen(e)}`, `地点：${e.location}`, `组织：${e.host_name || "Core Team"}`];
+  L.push(`人数：${e.capacity != null ? `上限 ${e.capacity} 人` : "不限"}，目前报名 ${st.going} 人${st.outsiders ? `（其中群外朋友 ${st.outsiders} 位）` : ""}`);
+  if (e.cost_estimate != null) L.push(`预计总花费：${money(e.cost_estimate)}`);
+  L.push(`申请校友会承担：${e.sponsor_plan != null ? money(e.sponsor_plan) : "（还没填）"}`);
+  if (+e.advance_amount > 0) L.push(`需要预拨：${money(e.advance_amount)}（订场或订金）`);
+  if (e.fund_detail) L.push("", "方案和预算：", e.fund_detail);
+  return L.join("\n");
+}
+function FundCard({ e, st, onSaved }) {
+  const [status, setStatus] = useState(e.fund_status || "none");
+  const [approved, setApproved] = useState(e.fund_approved != null ? String(e.fund_approved) : e.sponsor_plan != null ? String(e.sponsor_plan) : "");
+  const [adv, setAdv] = useState(!!e.advance_received);
+  const [busy, setBusy] = useState(false);
+  const [label, tone] = FUND[e.fund_status] || FUND.none;
+  async function save(ev) {
+    ev.preventDefault();
+    if (status === "approved" && !(approved !== "" && +approved >= 0)) { UI.toast("填一下批准了多少钱"); return; }
+    setBusy(true);
+    try { await api.team.patchEvent(e.id, { fund_status: status, fund_approved: status === "approved" ? +approved : null, advance_received: adv }); }
+    catch (x) { UI.toast(errText(x)); setBusy(false); return; }
+    UI.toast("经费进度已保存"); setBusy(false); onSaved();
+  }
+  return html`<form class="card stack-sm" onSubmit=${save} novalidate>
+    <div class="row between"><h2 class="h-sec">经费申请</h2><span class=${"pill " + tone}>${label}${e.fund_status === "approved" && e.fund_approved != null ? ` ${money(e.fund_approved)}` : ""}</span></div>
+    <p class="small">${fundSummary(e)}</p>
+    ${e.fund_detail && html`<p class="note">${e.fund_detail}</p>`}
+    <p class="hint">每场先把方案和预算发给会长，批了再办，结束后凭收据结算。金额在「编辑」里改。</p>
+    <button type="button" class="btn btn-quiet btn-sm" style="justify-self:start" onClick=${() => copyOrShow(fundText(e, st), "经费申请已复制，发给会长吧")}>复制经费申请</button>
+    <div class="grid2">
+      <div class="field"><label for="fd-st">进度</label>
+        <select id="fd-st" class="in" onChange=${(x) => setStatus(x.target.value)}>${Object.entries(FUND).map(([k, [l]]) => html`<option key=${k} value=${k} selected=${status === k}>${l}</option>`)}</select></div>
+      ${status === "approved" && html`<div class="field"><label for="fd-ok">批准金额（加元）</label><input id="fd-ok" class="in" type="number" inputmode="decimal" min="0" step="1" value=${approved} onInput=${(x) => setApproved(x.target.value)} /></div>`}
+    </div>
+    ${+e.advance_amount > 0 && html`<label class="check" for="fd-adv"><input id="fd-adv" type="checkbox" checked=${adv} onChange=${(x) => setAdv(x.target.checked)} /><span>预拨的 ${money(e.advance_amount)} 已经到账</span></label>`}
+    <button class="btn btn-primary btn-sm" style="justify-self:start" disabled=${busy}>${busy ? "保存中…" : "保存进度"}</button>
+  </form>`;
+}
 function SafetyNote() {
   return html`<aside class="safety" aria-label="安全提醒"><span class="mseal safe" aria-hidden="true">安</span><p class="small">${SAFETY}</p></aside>`;
 }
@@ -1912,7 +1975,7 @@ function BackupCard({ events }) {
   return html`<section class=${"card stack-sm" + (due ? " warn-card" : "")}>
     <h2 class="h-sec">备份</h2>
     <p class="small">${last ? `这台设备上次备份是${days === 0 ? "今天" : ` ${days} 天前`}。` : "这台设备还没下载过备份。"}免费版数据库没有自动备份，误删了就找不回。建议每场结算后下载一份，存到电脑或网盘。</p>
-    <p class="tiny muted">备份里有全部活动和报名名单（含介绍人和付款人），结算和设置也在里面，不含收据照片，注意保管。</p>
+    <p class="tiny muted">备份里有全部活动和报名名单（含介绍人、微信号和付款人），结算和设置也在里面，不含收据照片，注意保管。</p>
     ${CAN_DOWNLOAD
       ? html`<button class="btn btn-quiet btn-sm" style="justify-self:start" disabled=${busy} onClick=${run}>${busy ? "准备中…" : "下载全部数据备份"}</button>`
       : html`<p class="hint">请在手机或电脑的浏览器里打开后台再下载（微信里下载不了）。</p>`}
@@ -1923,9 +1986,9 @@ function Kpi({ n, unit, label, sub }) {
 }
 function rosterRows(signups) {
   const list = signups.filter((x) => x.status !== "cancelled");
-  const wx = list.some((s) => s.wechat);  // 微信号是以前的报名表才有的
-  const rows = [["状态", "名字", "人数", ...(wx ? ["微信"] : []), "新朋友", "介绍人", "付款人", "已收款", "已核实", "已签到", "留言", "报名时间", "来源"]];
-  for (const s of list) rows.push([s.status === "going" ? "确认" : "候补", s.name, s.party_size, ...(wx ? [s.wechat || ""] : []), s.is_new ? "是" : "", s.referrer || "", s.payer || "", s.paid ? "是" : "", s.verified ? "是" : "", s.attended ? "是" : "", s.note || "", fmtStamp(s.created_at), s.source === "team" ? "代报" : "网页"]);
+  const multi = list.some((s) => s.party_size > 1);  // 以前能带人，旧报名才会有人数
+  const rows = [["状态", "名字", ...(multi ? ["人数"] : []), "群外", "介绍人", "微信", "新朋友", "付款人", "已收款", "已核实", "已签到", "留言", "报名时间", "来源"]];
+  for (const s of list) rows.push([s.status === "going" ? "确认" : "候补", s.name, ...(multi ? [s.party_size] : []), s.outsider ? "是" : "", s.referrer || "", s.wechat || "", s.is_new ? "是" : "", s.payer || "", s.paid ? "是" : "", s.verified ? "是" : "", s.attended ? "是" : "", s.note || "", fmtStamp(s.created_at), s.source === "team" ? "代报" : "网页"]);
   return rows;
 }
 function SignupRow({ s, e, scope, onChange }) {
@@ -1940,7 +2003,7 @@ function SignupRow({ s, e, scope, onChange }) {
   return html`<li class="srow">
     <div class="srow-main">
       <p class="srow-name">${s.name}${s.party_size > 1 ? html`<span class="muted" style="font-weight:500">×${s.party_size}</span>` : null}
-        ${s.is_new ? html`<span class="pill hot">新朋友</span>` : null}${s.source === "team" ? html`<span class="pill">代报</span>` : null}
+        ${s.outsider ? html`<span class="pill hot">群外</span>` : null}${s.is_new ? html`<span class="pill hot">新朋友</span>` : null}${s.source === "team" ? html`<span class="pill">代报</span>` : null}
         ${s.verified ? html`<span class="pill ok">已核实</span>` : needsVerify(s, scope) ? html`<span class="pill warn">待核实</span>` : null}
         ${s.status === "going" && s.promoted_at ? html`<span class=${"pill " + (s.notified_at ? "" : "warn")}>${s.notified_at ? "候补转正 · 已通知" : "刚从候补补上"}</span>` : null}</p>
       <p class="tiny muted">${s.wechat ? `微信 ${s.wechat} · ` : ""}${fmtStamp(s.created_at)}报名</p>
@@ -1964,9 +2027,10 @@ function SignupRow({ s, e, scope, onChange }) {
 function AddGuest({ e, onAdded }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [party, setParty] = useState(1);
   const [isNew, setIsNew] = useState(false);
+  const [outsider, setOutsider] = useState(false);
   const [referrer, setReferrer] = useState("");
+  const [wechat, setWechat] = useState("");
   const [busy, setBusy] = useState(false);
   if (!open) return html`<button class="btn btn-quiet" style="justify-self:start" onClick=${() => setOpen(true)}>＋ 帮人报名（比如在微信里报的）</button>`;
   async function submit(ev) {
@@ -1974,18 +2038,22 @@ function AddGuest({ e, onAdded }) {
     if (!name.trim()) { UI.toast("先写名字"); return; }
     setBusy(true);
     let s;
-    try { s = await api.team.addGuest(e.id, { name: name.trim(), party, isNew, referrer: referrer.trim() }); }
+    try { s = await api.team.addGuest(e.id, { name: name.trim(), isNew, outsider, referrer: referrer.trim(), wechat: wechat.trim() }); }
     catch (x) { UI.toast(errText(x)); setBusy(false); return; }
     UI.toast(s.status === "waitlist" ? `名额不够，${name.trim()} 进了候补` : `已加上 ${name.trim()}`);
-    setName(""); setParty(1); setIsNew(false); setReferrer(""); setBusy(false);
+    setName(""); setIsNew(false); setOutsider(false); setReferrer(""); setWechat(""); setBusy(false);
     onAdded();
   }
   return html`<form class="card stack-sm" onSubmit=${submit} novalidate>
     <h3 class="h-sec">帮人报名</h3>
     <div class="field"><label for="g-name">名字<${Req} /></label><input id="g-name" class="in" required maxlength="40" value=${name} onInput=${(x) => setName(x.target.value)} /></div>
-    <div class="field"><span class="label" id="g-party-l">人数</span><${Counter} id="g-party" value=${party} min=${1} max=${10} onChange=${setParty} labelledby="g-party-l" /></div>
     <label class="check" for="g-new"><input id="g-new" type="checkbox" checked=${isNew} onChange=${(x) => setIsNew(x.target.checked)} /><span>新朋友</span></label>
-    <div class="field"><label for="g-ref">介绍人 <span class="opt-tag">选填</span></label><input id="g-ref" class="in" maxlength="60" value=${referrer} onInput=${(x) => setReferrer(x.target.value)} placeholder="哪位校友的家属 / 谁带来的" /></div>
+    <label class="check" for="g-out"><input id="g-out" type="checkbox" checked=${outsider} onChange=${(x) => setOutsider(x.target.checked)} /><span>本来不在中欧群里</span></label>
+    ${outsider && html`<div class="grid2">
+      <div class="field"><label for="g-ref">介绍人 <span class="opt-tag">选填</span></label><input id="g-ref" class="in" maxlength="60" value=${referrer} onInput=${(x) => setReferrer(x.target.value)} placeholder="谁介绍来的" /></div>
+      <div class="field"><label for="g-wx">微信号 <span class="opt-tag">选填</span></label><input id="g-wx" class="in" maxlength="60" value=${wechat} onInput=${(x) => setWechat(x.target.value)} /></div>
+    </div>`}
+    <p class="hint">一次加一个人。</p>
     <p class="hint">满了会自动进候补；要直接加进来，在候补名单里点「转为确认」。</p>
     <div class="row"><button class="btn btn-primary btn-sm" disabled=${busy}>${busy ? "添加中…" : "加进名单"}</button><button type="button" class="btn btn-ghost btn-sm" onClick=${() => setOpen(false)}>收起</button></div>
   </form>`;
@@ -2013,6 +2081,11 @@ function WrapUp({ e, st, onSaved }) {
   const [up, setUp] = useState(false);
   const self = cost !== "" ? Math.max(0, +cost - (sponsor === "" ? 0 : +sponsor)) : null;
   const per = self != null && +count > 0 ? self / +count : null;
+  const ok = e.fund_status === "approved" && e.fund_approved != null ? +e.fund_approved : null;
+  const over = ok != null && sponsor !== "" && +sponsor > ok ? +sponsor - ok : 0;
+  const adv = e.advance_received && +e.advance_amount > 0 ? +e.advance_amount : 0;
+  const settle = !adv ? "" : sponsor === "" ? `已预拨 ${money(adv)}，填了校友会承担后自动算多退少补。`
+    : adv > +sponsor ? `已预拨 ${money(adv)}，要退回校友会 ${money(adv - +sponsor)}。` : adv < +sponsor ? `已预拨 ${money(adv)}，校友会还要再给 ${money(+sponsor - adv)}。` : `已预拨 ${money(adv)}，刚好用完。`;
   async function onFiles(ev) {
     const files = Array.from(ev.target.files || []);
     ev.target.value = "";
@@ -2059,9 +2132,11 @@ function WrapUp({ e, st, onSaved }) {
         <p class="hint">报名 ${st.going} 人，已签到 ${st.attended} 人</p></div>
       <div class="field"><label for="w-cost">总花费（加元）</label><input id="w-cost" class="in" type="number" inputmode="decimal" min="0" step="0.01" value=${cost} onInput=${(x) => setCost(x.target.value)} placeholder="0" /></div>
       <div class="field"><label for="w-sp">校友会承担（加元）</label><input id="w-sp" class="in" type="number" inputmode="decimal" min="0" step="0.01" value=${sponsor} onInput=${(x) => setSponsor(x.target.value)} placeholder="0" />
-        ${e.sponsor_plan != null ? html`<p class="hint">计划 ${money(e.sponsor_plan)}</p>` : null}</div>
+        <p class="hint">${[e.sponsor_plan != null ? `申请 ${money(e.sponsor_plan)}` : null, ok != null ? `批准 ${money(ok)}` : FUND[e.fund_status] ? FUND[e.fund_status][0] : null].filter(Boolean).join(" · ")}</p>
+        ${over > 0 && html`<p class="err">比批准的多 ${money(over)}，先跟会长说明。</p>`}</div>
       <div class="field"><span class="label">自费 / AA</span><p class="small" style="padding-top:10px">${per != null ? `合计 $${self.toFixed(2)}，人均约 $${per.toFixed(2)}` : "填了总花费后自动算"}</p></div>
     </div>
+    ${settle && html`<p class="notice small">${settle}</p>`}
     <div class="field"><span class="label">收据</span>
       <div class="receipts">
         ${receipts.map((p) => html`<${ReceiptThumb} key=${p} path=${p} onRemove=${() => removeReceipt(p)} />`)}
@@ -2098,6 +2173,7 @@ function TeamEvent({ slug }) {
   const list = (items) => html`<ul class="srows">${items.map((s) => html`<${SignupRow} key=${s.id} s=${s} e=${e} scope=${scope} onChange=${load} />`)}</ul>`;
   const toNotify = toNotifyOf(signups);
   const toVerify = signups.filter((s) => needsVerify(s, scope));
+  const live = e.status === "published" || e.status === "pending";
   const paidGroups = going.filter((s) => s.paid).length;
   return html`<div class="stack">
     <button class="back" onClick=${nav("#/team")}>← Core Team</button>
@@ -2130,15 +2206,16 @@ function TeamEvent({ slug }) {
     </div>`}
     ${e.status === "published" && confirmCancel && html`<p class="hint" style="margin-top:-8px">取消后这场不会再出现在首页、预算和年度回顾里；报名的人打开链接会看到「已取消」。之后还能恢复。</p>`}
     ${e.status === "cancelled" && html`<div class="notice row between"><span>这场已取消，报名的人打开链接会看到提示。</span><button class="btn btn-quiet btn-sm" onClick=${() => patch({ status: "published" }, "已恢复")}>恢复</button></div>`}
-    ${toVerify.length > 0 && html`<div class="notice">有 ${toVerify.length} 位还没核实：${toVerify.map((s) => (s.is_new ? `${s.name}（新朋友${s.referrer ? `，介绍人：${s.referrer}` : ""}）` : s.name)).join("、")}。认识的直接点「核实」，不认识的找介绍人或对应的校友确认。提醒谁可以在「设置」里改。</div>`}
+    ${toVerify.length > 0 && html`<div class="notice">有 ${toVerify.length} 位还没核实：${toVerify.map((s) => { const bits = [s.outsider ? "群外" : null, s.is_new ? "新朋友" : null, s.referrer ? `介绍人：${s.referrer}` : null, s.wechat ? `微信：${s.wechat}` : null].filter(Boolean); return bits.length ? `${s.name}（${bits.join("，")}）` : s.name; }).join("、")}。认识的直接点「核实」，不认识的找介绍人或对应的校友确认。提醒谁可以在「设置」里改。</div>`}
     ${toNotify.length > 0 && html`<div class="notice warn-card">有 ${toNotify.length} 组刚从候补补上：${toNotify.map((s) => s.name).join("、")}。系统不会自动通知他们，在下面名单里点「复制通知」，发到微信。</div>`}
-    <section><h2 class="sub">名单 · ${going.length} 组 ${st.going} 人${isPaid(e) && going.length ? ` · 已收款 ${paidGroups} 组` : ""}</h2>${going.length ? list(going) : html`<p class="small muted">还没有人报名。</p>`}</section>
-    ${waiting.length > 0 && html`<section><h2 class="sub">候补 · ${waiting.length} 组 ${st.waiting} 人</h2>${list(waiting)}<p class="hint">有人取消或调高人数上限时，系统会按顺序自动补上。</p></section>`}
+    <section><h2 class="sub">名单 · ${st.going} 人${going.length !== st.going ? `（${going.length} 组）` : ""}${st.outsiders ? ` · 群外 ${st.outsiders} 位` : ""}${isPaid(e) && going.length ? ` · 已收款 ${paidGroups}` : ""}</h2>${going.length ? list(going) : html`<p class="small muted">还没有人报名。</p>`}</section>
+    ${waiting.length > 0 && html`<section><h2 class="sub">候补 · ${st.waiting} 人${waiting.length !== st.waiting ? `（${waiting.length} 组）` : ""}</h2>${list(waiting)}<p class="hint">有人取消或调高人数上限时，系统会按顺序自动补上。</p></section>`}
     <${AddGuest} e=${e} onAdded=${load} />
     ${gone.length > 0 && html`<section>
       <button class="past-toggle" aria-expanded=${showGone} onClick=${() => setShowGone(!showGone)}><span>已取消 · ${gone.length}</span><span>${showGone ? "收起" : "展开"}</span></button>
       ${showGone && list(gone)}
     </section>`}
+    ${live && html`<${FundCard} key=${"fund" + (e.updated_at || "")} e=${e} st=${st} onSaved=${load} />`}
     ${e.status === "published" && (hasStarted(e) ? html`<${WrapUp} key=${e.id + (e.updated_at || "")} e=${e} st=${st} onSaved=${load} />` : html`<p class="small muted">活动开始后，这里会出现「结算」：登记实到人数、花费和收据。</p>`)}
   </div>`;
 }
@@ -2175,53 +2252,51 @@ function Budget({ events, settings, reload }) {
   const [year, setYear] = useState(thisYear());
   const [edit, setEdit] = useState(false);
   const [yb, setYb] = useState(String(settings.year_budget));
-  const [ba, setBa] = useState(String(settings.big_amount));
   const [busy, setBusy] = useState(false);
   const list = events.filter((e) => e.status === "published" && yearOf(e.starts_at) === year).sort(byStart);
   const used = sum(list.filter((e) => e.wrapped).map((e) => e.sponsor_amount));
-  const planned = sum(list.filter((e) => !e.wrapped).map((e) => e.sponsor_plan));
+  const approvedOpen = sum(list.filter((e) => !e.wrapped && e.fund_status === "approved").map((e) => e.fund_approved));
+  const asking = sum(list.filter((e) => !e.wrapped && (e.fund_status || "none") !== "approved" && e.fund_status !== "declined").map((e) => e.sponsor_plan));
   const budget = +settings.year_budget || 0;
-  const left = budget - used - planned;
+  const left = budget - used - approvedOpen;
   const pct = (x) => (budget > 0 ? Math.min(100, (x / budget) * 100) : 0);
-  const big = +settings.big_amount || 0;
-  const flags = list.filter((e) => big > 0 && Math.max(+e.sponsor_plan || 0, +e.sponsor_amount || 0) >= big && !e.board_ok);
+  // 还要跟进的申请：填了申请金额，还没批（含待审核的活动）
+  const todo = events.filter((e) => ["published", "pending"].includes(e.status) && yearOf(e.starts_at) === year && !e.wrapped && +e.sponsor_plan > 0 && ["none", "submitted"].includes(e.fund_status || "none")).sort(byStart);
   async function saveSettings(ev) {
     ev.preventDefault();
-    if (!(+yb >= 0) || !(+ba >= 0)) { UI.toast("金额填数字"); return; }
+    if (!(+yb >= 0)) { UI.toast("金额填数字"); return; }
     setBusy(true);
-    try { await api.team.saveSettings({ year_budget: +yb, big_amount: +ba }); } catch (x) { UI.toast(errText(x)); setBusy(false); return; }
-    UI.toast("预算已更新"); setBusy(false); setEdit(false); reload();
+    try { await api.team.saveSettings({ year_budget: +yb }); } catch (x) { UI.toast(errText(x)); setBusy(false); return; }
+    UI.toast("年度额度已更新"); setBusy(false); setEdit(false); reload();
   }
   return html`<div class="stack">
     <${YearPick} years=${years} year=${year} onPick=${setYear} />
     <section class="card stack-sm">
-      <div class="row between"><h2 class="h-sec">${year} 年校友会经费</h2><button class="btn btn-ghost btn-sm" onClick=${() => setEdit(!edit)}>${edit ? "收起" : "改预算"}</button></div>
-      <p class="money"><b>${money(used)}</b><span class="muted small">已用 · 年度预算 ${money(budget)}</span></p>
-      <div class="meter" role="img" aria-label=${`已用 ${money(used)}，已排期预计 ${money(planned)}，预算 ${money(budget)}`}><i class="used" style=${{ width: pct(used) + "%" }}></i><i class="plan" style=${{ width: pct(planned) + "%" }}></i></div>
-      <div class="legend"><span><i class="sw used"></i>已结算 ${money(used)}</span><span><i class="sw plan"></i>已排期预计 ${money(planned)}</span><span><i class="sw"></i>${left >= 0 ? `还剩 ${money(left)}` : `预计超出 ${money(-left)}`}</span></div>
+      <div class="row between"><h2 class="h-sec">${year} 年校友会经费</h2><button class="btn btn-ghost btn-sm" onClick=${() => setEdit(!edit)}>${edit ? "收起" : "改额度"}</button></div>
+      <p class="money"><b>${money(used)}</b><span class="muted small">已结算 · 年度额度 ${money(budget)}</span></p>
+      <div class="meter" role="img" aria-label=${`已结算 ${money(used)}，已批准未结算 ${money(approvedOpen)}，额度 ${money(budget)}`}><i class="used" style=${{ width: pct(used) + "%" }}></i><i class="plan" style=${{ width: pct(approvedOpen) + "%" }}></i></div>
+      <div class="legend"><span><i class="sw used"></i>已结算 ${money(used)}</span><span><i class="sw plan"></i>已批准还没结算 ${money(approvedOpen)}</span><span><i class="sw"></i>${left >= 0 ? `还剩 ${money(left)}` : `超出 ${money(-left)}`}</span></div>
+      ${asking > 0 && html`<p class="small muted">另有 ${money(asking)} 在申请中，还没批。</p>`}
       ${edit && html`<form class="stack-sm" onSubmit=${saveSettings}>
-        <div class="grid2">
-          <div class="field"><label for="b-year">年度预算（加元）</label><input id="b-year" class="in" type="number" inputmode="numeric" min="0" value=${yb} onInput=${(x) => setYb(x.target.value)} /></div>
-          <div class="field"><label for="b-big">「较大金额」从多少算起</label><input id="b-big" class="in" type="number" inputmode="numeric" min="0" value=${ba} onInput=${(x) => setBa(x.target.value)} /></div>
-        </div>
+        <div class="field"><label for="b-year">年度额度（加元）</label><input id="b-year" class="in" type="number" inputmode="numeric" min="0" value=${yb} onInput=${(x) => setYb(x.target.value)} /></div>
         <button class="btn btn-primary btn-sm" style="justify-self:start" disabled=${busy}>保存</button>
       </form>`}
-      <p class="tiny muted">理事会拟提供每年 $3,000–$5,000，预算内自主安排。单场校友会承担达到 ${money(big)} 算较大金额，要提前和理事会沟通。确定的金额出来后在「改预算」里更新。</p>
+      <p class="tiny muted">理事会每年给 $3,000–$5,000 的额度，具体金额和流程提前确认。每场活动先把方案和预算发给会长，批了再办，结束后凭收据结算。订场、付订金可以申请预拨，尽量不要个人垫付大额费用。</p>
     </section>
-    ${flags.length > 0 && html`<section class="card warn-card stack-sm">
-      <h2 class="h-sec">这几场要先和理事会打招呼</h2>
-      <p class="small">校友会承担 ≥ ${money(big)}，还没标记「已和理事会沟通」。沟通完在活动的编辑页勾上。</p>
-      <ul class="srows">${flags.map((e) => html`<li key=${e.id} class="srow"><a class="srow-main" href=${"#/team/edit/" + e.slug} onClick=${nav("#/team/edit/" + e.slug)}><span style="font-weight:700">${e.title}</span><span class="tiny muted">${fmtDay(e.starts_at)} · ${money(Math.max(+e.sponsor_plan || 0, +e.sponsor_amount || 0))}</span></a></li>`)}</ul>
+    ${todo.length > 0 && html`<section class="card warn-card stack-sm">
+      <h2 class="h-sec">还要跟进的经费申请</h2>
+      <ul class="srows">${todo.map((e) => html`<li key=${e.id} class="srow"><a class="srow-main" href=${"#/team/e/" + e.slug} onClick=${nav("#/team/e/" + e.slug)}><span style="font-weight:700">${e.title}</span><span class="tiny muted">${fmtDay(e.starts_at)} · 申请 ${money(e.sponsor_plan)} · ${(FUND[e.fund_status] || FUND.none)[0]}${e.status === "pending" ? " · 活动还没审核" : ""}</span></a></li>`)}</ul>
     </section>`}
     <div class="table-wrap"><table class="t">
-      <thead><tr><th>日期</th><th>活动</th><th class="num">计划</th><th class="num">实际</th><th>状态</th></tr></thead>
+      <thead><tr><th>日期</th><th>活动</th><th class="num">申请</th><th class="num">批准</th><th class="num">实际</th><th>状态</th></tr></thead>
       <tbody>${list.length ? list.map((e) => html`<tr key=${e.id}>
         <td>${fmtDay(e.starts_at).split(" ")[0]}</td>
         <td class="title"><a href=${"#/team/e/" + e.slug} onClick=${nav("#/team/e/" + e.slug)}>${e.title}</a></td>
         <td class="num">${e.sponsor_plan == null ? "—" : money(e.sponsor_plan)}</td>
+        <td class="num">${e.fund_status === "approved" && e.fund_approved != null ? money(e.fund_approved) : "—"}</td>
         <td class="num">${e.wrapped ? money(e.sponsor_amount) : "—"}</td>
-        <td>${e.wrapped ? html`<span class="pill ok">已结算</span>` : isPast(e) ? html`<span class="pill warn">待结算</span>` : html`<span class="pill">已排期</span>`}</td>
-      </tr>`) : html`<tr><td colspan="5" class="muted">这一年还没有活动。</td></tr>`}</tbody>
+        <td>${e.wrapped ? html`<span class="pill ok">已结算</span>` : html`<span class=${"pill " + (FUND[e.fund_status] || FUND.none)[1]}>${(FUND[e.fund_status] || FUND.none)[0]}</span>`}</td>
+      </tr>`) : html`<tr><td colspan="6" class="muted">这一年还没有活动。</td></tr>`}</tbody>
     </table></div>
   </div>`;
 }
@@ -2238,12 +2313,12 @@ function Settings({ settings, reload }) {
     catch (x) { UI.toast(errText(x)); setBusy(false); return; }
     UI.toast("设置已保存"); setBusy(false); reload();
   }
-  const SCOPES = [["all", "所有没核实过的人", "最严：不管是不是第一次来，没点过「核实」的都提醒。"], ["new", "只提醒新朋友", "勾了「第一次参加」的才提醒。"], ["off", "不提醒", "名单里还能点「核实」，只是不再标「待核实」。"]];
+  const SCOPES = [["all", "所有没核实过的人", "最严：不管是不是第一次来，没点过「核实」的都提醒。"], ["new", "只提醒群外的人和新朋友", "本来不在中欧群里的，或者勾了「第一次参加」的，才提醒。"], ["off", "不提醒", "名单里还能点「核实」，只是不再标「待核实」。"]];
   return html`<form class="stack" onSubmit=${save}>
     <section class="card stack-sm">
-      <h2 class="h-sec">新朋友报名</h2>
+      <h2 class="h-sec">本来不在中欧群里的人</h2>
       <label class="check" for="s-ref"><input id="s-ref" type="checkbox" checked=${f.require_referrer} onChange=${(x) => set("require_referrer", x.target.checked)} />
-        <span>必须写介绍人<span class="hint block">勾了「第一次参加」的人要写是哪位校友的家属、谁带来的。不勾的话介绍人变成选填。</span></span></label>
+        <span>报名时必须写介绍人和微信号<span class="hint block">不勾的话这两项变成选填。</span></span></label>
     </section>
     <section class="card stack-sm">
       <h2 class="h-sec">名单里的「待核实」提醒</h2>
@@ -2267,8 +2342,8 @@ function buildReview(events, year, settings) {
   const rows = list.map((e) => ({ e, st: teamStats(e) }));
   const doneRows = rows.filter((r) => isPast(r.e));
   const wrapped = list.filter((e) => e.wrapped);
-  const people = new Set();
-  for (const e of done) for (const s of e.signups || []) if (s.status === "going") people.add(normName(s.name));
+  const people = new Set(), outside = new Set();
+  for (const e of done) for (const s of e.signups || []) if (s.status === "going") { people.add(normName(s.name)); if (s.outsider) outside.add(normName(s.name)); }
   const byMonth = Array.from({ length: 12 }, () => []);
   for (const e of list) byMonth[zp(Date.parse(e.starts_at)).m - 1].push(e);
   const byCat = CATS.map((c) => ({ c, n: list.filter((e) => ((e.categories || [])[0] || "other") === c.key).length })).filter((x) => x.n > 0);
@@ -2279,8 +2354,9 @@ function buildReview(events, year, settings) {
     unwrapped: done.filter((e) => !e.wrapped).length,
     newcomers: sum(doneRows.map((r) => r.st.newcomers)),
     unique: people.size,
+    outsiders: outside.size,
     spent: sum(wrapped.map((e) => e.sponsor_amount)),
-    plannedSpend: sum(list.filter((e) => !e.wrapped).map((e) => e.sponsor_plan)),
+    approvedOpen: sum(list.filter((e) => !e.wrapped && e.fund_status === "approved").map((e) => e.fund_approved)),
     selfPaid: sum(wrapped.map((e) => Math.max(0, (+e.actual_cost || 0) - (+e.sponsor_amount || 0)))),
     receiptsOk: wrapped.filter((e) => (e.receipts || []).length > 0).length,
     budget: +settings.year_budget || 0,
@@ -2290,9 +2366,9 @@ function reviewText(r) {
   const [lo, hi] = CONFIG.yearTarget;
   const L = [`${CONFIG.name} · ${r.year} 年度小结（截至 ${todayLabel()}）`, ""];
   L.push(`活动：已办 ${r.done.length} 场${r.planned.length ? `，另有 ${r.planned.length} 场已排期` : ""}（目标每年 ${lo}–${hi} 场）`);
-  L.push(`参与：实到 ${r.attend} 人次（报名 ${r.signups} 人次），约 ${r.unique} 位不同的朋友参加过，其中新朋友 ${r.newcomers} 位`);
+  L.push(`参与：实到 ${r.attend} 人次（报名 ${r.signups} 人次），约 ${r.unique} 位不同的朋友参加过，其中新朋友 ${r.newcomers} 位${r.outsiders ? `，群外朋友介绍来的 ${r.outsiders} 位` : ""}`);
   if (r.unwrapped) L.push(`（还有 ${r.unwrapped} 场没登记实到人数）`);
-  L.push(`经费：校友会预算 ${money(r.budget)}，已用 ${money(r.spent)}${r.budget ? `（${Math.round((r.spent / r.budget) * 100)}%）` : ""}${r.plannedSpend ? `，已排期活动预计再用 ${money(r.plannedSpend)}` : ""}；大家自费 / AA 合计 ${money(r.selfPaid)}`);
+  L.push(`经费：年度额度 ${money(r.budget)}，已结算 ${money(r.spent)}${r.budget ? `（${Math.round((r.spent / r.budget) * 100)}%）` : ""}${r.approvedOpen ? `，已批准还没结算 ${money(r.approvedOpen)}` : ""}；大家自费 / AA 合计 ${money(r.selfPaid)}`);
   if (r.byCat.length) L.push(`类型：${r.byCat.map((x) => `${x.c.label} ${x.n}`).join(" · ")}`);
   L.push(`收据：已结算 ${r.wrapped.length} 场，${r.receiptsOk} 场有收据`);
   if (r.done.length) {
@@ -2304,8 +2380,8 @@ function reviewText(r) {
   return L.join("\n");
 }
 function reviewRows(r) {
-  const rows = [["日期", "活动", "类型", "报名人数", "实到人数", "新朋友", "总花费", "校友会承担", "自费/AA", "收据张数", "下次注意"]];
-  for (const { e, st } of r.rows) rows.push([fmtDay(e.starts_at), e.title, (e.categories || []).map((k) => catOf(k).label).join("/"), st.going, e.wrapped ? e.actual_count : "", st.newcomers, e.wrapped ? e.actual_cost ?? "" : "", e.wrapped ? e.sponsor_amount ?? "" : e.sponsor_plan ?? "", e.wrapped ? Math.max(0, (+e.actual_cost || 0) - (+e.sponsor_amount || 0)) : "", (e.receipts || []).length, e.wrap_notes || ""]);
+  const rows = [["日期", "活动", "类型", "报名人数", "实到人数", "新朋友", "群外", "总花费", "申请金额", "批准金额", "校友会承担", "自费/AA", "收据张数", "下次注意"]];
+  for (const { e, st } of r.rows) rows.push([fmtDay(e.starts_at), e.title, (e.categories || []).map((k) => catOf(k).label).join("/"), st.going, e.wrapped ? e.actual_count : "", st.newcomers, st.outsiders, e.wrapped ? e.actual_cost ?? "" : "", e.sponsor_plan ?? "", e.fund_status === "approved" ? e.fund_approved ?? "" : "", e.wrapped ? e.sponsor_amount ?? "" : "", e.wrapped ? Math.max(0, (+e.actual_cost || 0) - (+e.sponsor_amount || 0)) : "", (e.receipts || []).length, e.wrap_notes || ""]);
   return rows;
 }
 function Review({ events, settings }) {
@@ -2323,8 +2399,8 @@ function Review({ events, settings }) {
     <div class="kpis">
       <${Kpi} n=${r.done.length} unit=" 场" label=${`已办（目标 ${lo}–${hi} 场）`} sub=${r.planned.length ? `另有 ${r.planned.length} 场已排期` : ""} />
       <${Kpi} n=${r.attend} label="实到人次" sub=${`报名 ${r.signups} 人次`} />
-      <${Kpi} n=${r.unique} label="不同的朋友" sub=${`新朋友 ${r.newcomers} 位`} />
-      <${Kpi} n=${money(r.spent)} label="校友会经费已用" sub=${r.budget ? `占预算 ${Math.round((r.spent / r.budget) * 100)}%` : ""} />
+      <${Kpi} n=${r.unique} label="不同的朋友" sub=${`新朋友 ${r.newcomers} 位${r.outsiders ? ` · 群外 ${r.outsiders} 位` : ""}`} />
+      <${Kpi} n=${money(r.spent)} label="校友会经费已结算" sub=${r.budget ? `占额度 ${Math.round((r.spent / r.budget) * 100)}%` : ""} />
     </div>
     ${r.unwrapped > 0 && html`<p class="notice small">还有 ${r.unwrapped} 场结束了但没结算，实到人数和花费暂时没算进来。到「活动」里的「待结算」补上。</p>`}
     <section class="card stack-sm"><h3 class="h-sec">一年的节奏</h3>
@@ -2344,7 +2420,7 @@ function Review({ events, settings }) {
         <td class="num">${e.wrapped ? e.actual_count : "—"}</td>
         <td class="num">${st.newcomers}</td>
         <td class="num">${e.wrapped && e.actual_cost != null ? money(e.actual_cost) : "—"}</td>
-        <td class="num">${e.wrapped ? money(e.sponsor_amount) : e.sponsor_plan != null ? html`<span class="muted">计划 ${money(e.sponsor_plan)}</span>` : "—"}</td>
+        <td class="num">${e.wrapped ? money(e.sponsor_amount) : e.fund_status === "approved" && e.fund_approved != null ? html`<span class="muted">批准 ${money(e.fund_approved)}</span>` : e.sponsor_plan != null ? html`<span class="muted">申请 ${money(e.sponsor_plan)}</span>` : "—"}</td>
         <td class="num">${(e.receipts || []).length || (e.wrapped ? html`<span class="pill warn">缺</span>` : "—")}</td>
       </tr>`) : html`<tr><td colspan="8" class="muted">这一年还没有活动。</td></tr>`}</tbody>
     </table></div>
