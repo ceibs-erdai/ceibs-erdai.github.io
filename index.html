@@ -1365,7 +1365,7 @@ function JoinForm({ e, onJoined }) {
         <label class="check" for="j-out"><input id="j-out" type="radio" name="j-grp" checked=${inGroup === false} onChange=${() => setInGroup(false)} /><span>不在，是朋友介绍来的</span></label>
       </div></div>
     ${outsider && html`<div class="field"><label for="j-ref">谁介绍你来的？${refRequired ? html`<${Req} />` : html` <span class="opt-tag">选填</span>`}</label>
-      <input id="j-ref" class="in" required=${refRequired} value=${referrer} onInput=${(x) => setReferrer(x.target.value)} maxlength="60" placeholder="比如：Amy 介绍的 / XX 级 XX 校友的朋友" /></div>
+      <input id="j-ref" class="in" required=${refRequired} value=${referrer} onInput=${(x) => setReferrer(x.target.value)} maxlength="60" placeholder="比如：Amy 介绍的" /></div>
     <div class="field"><label for="j-wx">你的微信号${refRequired ? html`<${Req} />` : html` <span class="opt-tag">选填</span>`}</label>
       <input id="j-wx" class="in" required=${refRequired} value=${wechat} onInput=${(x) => setWechat(x.target.value)} maxlength="60" autocapitalize="off" autocomplete="off" />
       <p class="hint">Core Team 会加你确认身份。介绍人和微信号只有 Core Team 看得到。${friendCost(e) ? `${FRIEND_COST}。` : ""}</p></div>`}
